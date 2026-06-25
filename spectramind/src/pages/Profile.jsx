@@ -1,102 +1,54 @@
-import Sidebar from "../components/layout/Sidebar";
-import Topbar from "../components/layout/Topbar";
+import { UserCircle } from "lucide-react";
+import AppShell from "../components/layout/AppShell";
+
+const details = [
+  ["Full Name", "Admin User"],
+  ["Email", "admin@spectramind.ai"],
+  ["Role", "Compliance Administrator"],
+  ["Department", "Security & Compliance"],
+];
 
 export default function Profile() {
   return (
-    <div className="flex">
-
-      <Sidebar />
-
-      <div className="flex-1 bg-slate-100 dark:bg-slate-900 min-h-screen">
-
-        <Topbar />
-
-        <div className="p-8">
-
-          <h1 className="text-4xl font-bold text-black dark:text-white mb-8">
+    <AppShell>
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+            Account
+          </p>
+          <h1 className="mt-2 text-4xl font-bold text-slate-950 dark:text-white">
             My Profile
           </h1>
-
-          <div className="grid md:grid-cols-3 gap-6">
-
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow p-6">
-
-              <div className="flex flex-col items-center">
-
-                <div className="w-24 h-24 rounded-full bg-blue-600 text-white flex items-center justify-center text-3xl font-bold">
-                  A
-                </div>
-
-                <h2 className="mt-4 text-xl font-bold text-black dark:text-white">
-                  Admin User
-                </h2>
-
-                <p className="text-gray-500 dark:text-gray-300">
-                  Compliance Administrator
-                </p>
-
-              </div>
-
-            </div>
-
-            <div className="md:col-span-2 bg-white dark:bg-slate-800 rounded-xl shadow p-6">
-
-              <h2 className="text-2xl font-bold text-black dark:text-white mb-6">
-                User Information
-              </h2>
-
-              <div className="space-y-4">
-
-                <div>
-                  <p className="text-gray-500 dark:text-gray-300">
-                    Full Name
-                  </p>
-
-                  <p className="font-semibold text-black dark:text-white">
-                    Admin User
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-gray-500 dark:text-gray-300">
-                    Email
-                  </p>
-
-                  <p className="font-semibold text-black dark:text-white">
-                    admin@spectramind.ai
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-gray-500 dark:text-gray-300">
-                    Role
-                  </p>
-
-                  <p className="font-semibold text-black dark:text-white">
-                    Compliance Administrator
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-gray-500 dark:text-gray-300">
-                    Department
-                  </p>
-
-                  <p className="font-semibold text-black dark:text-white">
-                    Security & Compliance
-                  </p>
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
         </div>
 
-      </div>
+        <div className="grid gap-6 md:grid-cols-[320px_1fr]">
+          <section className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-blue-600 text-white">
+              <UserCircle size={58} />
+            </div>
+            <h2 className="mt-4 text-xl font-bold text-slate-950 dark:text-white">
+              Admin User
+            </h2>
+            <p className="mt-1 text-slate-500 dark:text-slate-400">
+              Compliance Administrator
+            </p>
+          </section>
 
-    </div>
+          <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="text-2xl font-bold text-slate-950 dark:text-white">
+              User Information
+            </h2>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {details.map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-slate-50 p-4 dark:bg-slate-800">
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+                  <p className="mt-1 font-bold text-slate-950 dark:text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </AppShell>
   );
 }

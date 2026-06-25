@@ -114,7 +114,7 @@ export default function Login() {
             <span className="text-2xl font-bold">SpectraMind</span>
           </Link>
 
-          <div className="relative flex flex-1 flex-col justify-center py-8">
+          <div className="relative flex flex-1 flex-col justify-center -translate-y-10 py-8">
             <div className="max-w-xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-blue-100">
               <Sparkles size={16} />

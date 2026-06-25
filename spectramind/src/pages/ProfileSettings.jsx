@@ -1,58 +1,48 @@
-import Sidebar from "../components/layout/Sidebar";
-import Topbar from "../components/layout/Topbar";
+import AppShell from "../components/layout/AppShell";
 
 export default function ProfileSettings() {
   return (
-    <div className="flex">
-
-      <Sidebar />
-
-      <div className="flex-1 bg-slate-100 dark:bg-slate-900 min-h-screen">
-
-        <Topbar />
-
-        <div className="p-8">
-
-          <h1 className="text-4xl font-bold text-black dark:text-white mb-8">
+    <AppShell>
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+            Account
+          </p>
+          <h1 className="mt-2 text-4xl font-bold text-slate-950 dark:text-white">
             Profile Settings
           </h1>
-
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow p-6">
-
-            <label className="block mb-2 text-black dark:text-white">
-              Full Name
-            </label>
-
-            <input
-              className="w-full border p-3 rounded-lg mb-5 bg-white dark:bg-slate-700 dark:text-white"
-              defaultValue="Admin"
-            />
-
-            <label className="block mb-2 text-black dark:text-white">
-              Email
-            </label>
-
-            <input
-              className="w-full border p-3 rounded-lg mb-5 bg-white dark:bg-slate-700 dark:text-white"
-              defaultValue="admin@spectramind.ai"
-            />
-
-            <label className="block mb-2 text-black dark:text-white">
-              Password
-            </label>
-
-            <input
-              type="password"
-              className="w-full border p-3 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
-              defaultValue="password"
-            />
-
-          </div>
-
+          <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
+            Update your profile information and account credentials.
+          </p>
         </div>
 
-      </div>
+        <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="grid gap-5">
+            <Field label="Full Name" defaultValue="Admin" />
+            <Field label="Email" defaultValue="admin@spectramind.ai" />
+            <Field label="Password" defaultValue="password" type="password" />
+          </div>
 
-    </div>
+          <button className="mt-6 rounded-lg bg-primary px-5 py-3 font-semibold text-white transition hover:bg-blue-700">
+            Update Profile
+          </button>
+        </section>
+      </div>
+    </AppShell>
+  );
+}
+
+function Field({ label, defaultValue, type = "text" }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+        {label}
+      </span>
+      <input
+        type={type}
+        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:ring-blue-950"
+        defaultValue={defaultValue}
+      />
+    </label>
   );
 }

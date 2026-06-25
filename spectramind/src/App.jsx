@@ -8,6 +8,12 @@ import Frameworks from "./pages/Frameworks";
 import Evidence from "./pages/Evidence";
 import Risks from "./pages/Risks";
 import Vendors from "./pages/Vendors";
+import Questionnaire from "./pages/Questionnaire";
+import Implementation from "./pages/Implementation";
+import Employees from "./pages/Employees";
+import Audits from "./pages/Audits";
+import Comments from "./pages/Comments";
+import Tasks from "./pages/Tasks";
 
 import TrustCenter from "./pages/TrustCenter";
 import Settings from "./pages/Settings";
@@ -58,6 +64,12 @@ function App() {
         <Route path="/evidence" element={<Evidence />} />
         <Route path="/risks" element={<Risks />} />
         <Route path="/vendors" element={<Vendors />} />
+        <Route path="/questionnaire" element={<Questionnaire />} />
+        <Route path="/implementation" element={<Implementation />} />
+        <Route path="/employees" element={<Employees />} />
+        <Route path="/audits" element={<Audits />} />
+        <Route path="/comments" element={<Comments />} />
+        <Route path="/tasks" element={<Tasks />} />
 
         <Route path="/trust-center" element={<TrustCenter />} />
         <Route path="/settings" element={<Settings />} />

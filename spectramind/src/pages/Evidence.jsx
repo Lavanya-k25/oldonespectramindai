@@ -1,159 +1,103 @@
+import { FileText, Trash2, UploadCloud } from "lucide-react";
 import { useState } from "react";
-
-import Sidebar from "../components/layout/Sidebar";
-import Topbar from "../components/layout/Topbar";
+import AppShell from "../components/layout/AppShell";
 
 const initialEvidence = [
-  {
-    name: "Access Review.pdf",
-    category: "Access Control",
-    uploaded: "Jun 2026"
-  },
-  {
-    name: "IAM Audit.xlsx",
-    category: "Identity Management",
-    uploaded: "Jun 2026"
-  },
-  {
-    name: "Incident Response Plan.pdf",
-    category: "Security Operations",
-    uploaded: "May 2026"
-  }
+  { name: "Access Review.pdf", category: "Access Control", uploaded: "Jun 2026" },
+  { name: "IAM Audit.xlsx", category: "Identity Management", uploaded: "Jun 2026" },
+  { name: "Incident Response Plan.pdf", category: "Security Operations", uploaded: "May 2026" },
 ];
 
 export default function Evidence() {
-
   const [files, setFiles] = useState(initialEvidence);
 
   const handleUpload = (event) => {
-
     const file = event.target.files[0];
 
     if (!file) return;
 
-    const newFile = {
-      name: file.name,
-      category: "Uploaded File",
-      uploaded: "Today"
-    };
-
     setFiles([
       ...files,
-      newFile
+      {
+        name: file.name,
+        category: "Uploaded File",
+        uploaded: "Today",
+      },
     ]);
   };
 
   const deleteFile = (fileName) => {
-
-    setFiles(
-      files.filter(
-        (file) => file.name !== fileName
-      )
-    );
-
+    setFiles(files.filter((file) => file.name !== fileName));
   };
 
   return (
-    <div className="flex">
-
-      <Sidebar />
-
-      <div className="flex-1 bg-slate-100 dark:bg-slate-900 min-h-screen">
-
-        <Topbar />
-
-        <div className="p-8">
-
-          <h1 className="text-4xl font-bold mb-8 text-black dark:text-white">
+    <AppShell>
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+            Evidence
+          </p>
+          <h1 className="mt-2 text-4xl font-bold text-slate-950 dark:text-white">
             Evidence Repository
           </h1>
-
-          {/* Upload Area */}
-
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow p-8 mb-8">
-
-            <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl p-12 text-center">
-
-              <h2 className="text-2xl font-bold text-black dark:text-white">
-                📄 Drag & Drop Files Here
-              </h2>
-
-              <p className="text-gray-500 dark:text-gray-300 mt-3">
-                Upload compliance evidence and supporting documents.
-              </p>
-
-              <label className="inline-block mt-6 bg-blue-600 text-white px-6 py-3 rounded-xl cursor-pointer hover:bg-blue-700">
-
-                Upload Evidence
-
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleUpload}
-                />
-
-              </label>
-
-            </div>
-
-          </div>
-
-          {/* Evidence List */}
-
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow">
-
-            <div className="p-6 border-b border-gray-200 dark:border-slate-700">
-
-              <h2 className="text-2xl font-bold text-black dark:text-white">
-                Uploaded Files
-              </h2>
-
-            </div>
-
-            {files.map((file) => (
-
-              <div
-                key={file.name}
-                className="p-6 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center"
-              >
-
-                <div>
-
-                  <h3 className="font-bold text-lg text-black dark:text-white">
-                    📄 {file.name}
-                  </h3>
-
-                  <p className="text-gray-500 dark:text-gray-300">
-                    {file.category}
-                  </p>
-
-                </div>
-
-                <div className="flex items-center gap-6">
-
-                  <span className="text-gray-500 dark:text-gray-300">
-                    {file.uploaded}
-                  </span>
-
-                  <button
-                    onClick={() => deleteFile(file.name)}
-                    className="text-red-600 font-semibold hover:text-red-800"
-                  >
-                    Delete
-                  </button>
-
-                </div>
-
-              </div>
-
-            ))}
-
-          </div>
-
+          <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
+            Upload, review, and organize audit artifacts for your active controls.
+          </p>
         </div>
 
-      </div>
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-10 text-center dark:border-slate-700 dark:bg-slate-950">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+              <UploadCloud size={28} />
+            </div>
+            <h2 className="mt-5 text-2xl font-bold text-slate-950 dark:text-white">
+              Upload compliance evidence
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-slate-600 dark:text-slate-300">
+              Add screenshots, reports, policies, and exports that support control readiness.
+            </p>
 
-    </div>
+            <label className="mt-6 inline-flex cursor-pointer items-center justify-center rounded-lg bg-primary px-6 py-3 font-semibold text-white transition hover:bg-blue-700">
+              Upload Evidence
+              <input type="file" className="hidden" onChange={handleUpload} />
+            </label>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 p-5 dark:border-slate-800">
+            <h2 className="text-xl font-bold text-slate-950 dark:text-white">Uploaded Files</h2>
+          </div>
+
+          {files.map((file) => (
+            <div
+              key={file.name}
+              className="flex flex-col gap-4 border-b border-slate-100 p-5 last:border-b-0 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-blue-600 dark:bg-slate-800 dark:text-blue-300">
+                  <FileText size={21} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-950 dark:text-white">{file.name}</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {file.category} · {file.uploaded}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => deleteFile(file.name)}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:hover:bg-slate-800"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
+            </div>
+          ))}
+        </section>
+      </div>
+    </AppShell>
   );
 }
