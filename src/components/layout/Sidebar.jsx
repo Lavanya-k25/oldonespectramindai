@@ -43,17 +43,17 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-white lg:block">
+    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-white/70 bg-[#fffdf8]/78 px-4 py-5 text-slate-900 shadow-2xl shadow-slate-900/5 backdrop-blur-2xl lg:block">
       <Link
         to="/dashboard"
-        className="flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-slate-50 dark:hover:bg-white/5"
+        className="flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/60"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-white">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-blue-600/30 bg-[linear-gradient(135deg,rgba(255,255,255,.95),rgba(216,180,109,.52))] text-lg font-black text-blue-700 shadow-lg shadow-blue-600/20">
           S
         </span>
         <div>
-          <p className="text-xl font-bold leading-tight">SpectraMind</p>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xl font-black leading-tight">SpectraMinds.ai</p>
+          <p className="text-xs font-medium text-slate-500">
             Trust operations
           </p>
         </div>
@@ -73,7 +73,7 @@ export default function Sidebar() {
 function NavGroup({ title, items, activePath }) {
   return (
     <div>
-      <p className="mb-1.5 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">
+      <p className="mb-1.5 px-3 text-xs font-black uppercase tracking-widest text-blue-700/75">
         {title}
       </p>
       <div className="space-y-1">
@@ -94,8 +94,8 @@ function NavItem({ item, activePath }) {
       to={item.path}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition ${
         isActive
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-200"
-          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white"
+          ? "border border-blue-600/20 bg-blue-50 text-blue-800 shadow-sm shadow-blue-600/10"
+          : "text-slate-600 hover:bg-white/62 hover:text-slate-900"
       }`}
     >
       <Icon size={17} />
