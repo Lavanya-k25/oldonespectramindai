@@ -2,9 +2,9 @@ export const frameworks = [
   {
     id: 1,
     name: "SOC 2",
-    progress: 85,
-    controls: 64,
-    evidence: 124,
+    progress: 99,
+    controls: 395,
+    evidence: 395,
     status: "In Progress"
   },
   {
