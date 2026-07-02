@@ -1,34 +1,12 @@
 import { FileText, Trash2, UploadCloud } from "lucide-react";
-import { useState } from "react";
 import AppShell from "../components/layout/AppShell";
-
-const initialEvidence = [
-  { name: "Access Review.pdf", category: "Access Control", uploaded: "Jun 2026" },
-  { name: "IAM Audit.xlsx", category: "Identity Management", uploaded: "Jun 2026" },
-  { name: "Incident Response Plan.pdf", category: "Security Operations", uploaded: "May 2026" },
-];
+import { useEvidenceStore } from "../core/adapters/useEvidenceStore";
 
 export default function Evidence() {
-  const [files, setFiles] = useState(initialEvidence);
-
-  const handleUpload = (event) => {
-    const file = event.target.files[0];
-
-    if (!file) return;
-
-    setFiles([
-      ...files,
-      {
-        name: file.name,
-        category: "Uploaded File",
-        uploaded: "Today",
-      },
-    ]);
-  };
-
-  const deleteFile = (fileName) => {
-    setFiles(files.filter((file) => file.name !== fileName));
-  };
+  // All evidence state is now managed by EvidenceEngineService (versioning,
+  // tags, review status, approval status, mappings, audit history).
+  // The existing UI markup below is completely unchanged.
+  const { files, uploadFile, deleteFile } = useEvidenceStore();
 
   return (
     <AppShell>
@@ -59,7 +37,7 @@ export default function Evidence() {
 
             <label className="mt-6 inline-flex cursor-pointer items-center justify-center rounded-lg bg-primary px-6 py-3 font-semibold text-white transition hover:bg-blue-700">
               Upload Evidence
-              <input type="file" className="hidden" onChange={handleUpload} />
+              <input type="file" className="hidden" onChange={uploadFile} />
             </label>
           </div>
         </section>

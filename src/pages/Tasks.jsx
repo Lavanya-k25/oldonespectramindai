@@ -1,39 +1,58 @@
 import { CheckSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import ComplianceModulePage from "../components/compliance/ComplianceModulePage";
+import { getFrameworkLibrary } from "../data/frameworkLibraries";
+import { loadOrganizationWorkspace } from "../data/organizationWorkspace";
+import { loadQuestionnaireResponses } from "../data/questionnaireEngine";
+import { generateImplementationTasks } from "../data/taskEngine";
+
+const soc2Library = getFrameworkLibrary("soc-2");
 
 export default function Tasks() {
+  const [workspaceData, setWorkspaceData] = useState(() => loadOrganizationWorkspace());
+  const [questionnaireResponses, setQuestionnaireResponses] = useState(() => loadQuestionnaireResponses());
+
+  useEffect(() => {
+    const refreshWorkspaceData = () => setWorkspaceData(loadOrganizationWorkspace());
+    const refreshQuestionnaireResponses = () => setQuestionnaireResponses(loadQuestionnaireResponses());
+
+    window.addEventListener("spectramind:workspace-updated", refreshWorkspaceData);
+    window.addEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
+    window.addEventListener("storage", refreshWorkspaceData);
+
+    return () => {
+      window.removeEventListener("spectramind:workspace-updated", refreshWorkspaceData);
+      window.removeEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
+      window.removeEventListener("storage", refreshWorkspaceData);
+    };
+  }, []);
+
+  const tasks = useMemo(
+    () => generateImplementationTasks(soc2Library, workspaceData, questionnaireResponses),
+    [questionnaireResponses, workspaceData]
+  );
+  const evidenceTasks = tasks.filter((task) => task.id.includes("upload-evidence")).length;
+  const ownerTasks = tasks.filter((task) => task.id.includes("assign-owner")).length;
+
   return (
     <ComplianceModulePage
       eyebrow="Compliance"
       title="Tasks"
-      description="Manage compliance tasks, blockers, due dates, and accountable owners."
+      description="Automatically generated implementation tasks from SOC 2 workspace progress."
       icon={CheckSquare}
-      actionLabel="Create Task"
+      actionLabel="Refresh Tasks"
       metrics={[
-        ["Open", "24"],
-        ["Due soon", "6"],
-        ["Blocked", "3"],
+        ["Open", String(tasks.length)],
+        ["Evidence", String(evidenceTasks)],
+        ["Ownership", String(ownerTasks)],
       ]}
-      items={[
-        {
-          title: "Upload access review evidence",
-          description: "Attach the June access review export to SOC 2 CC6.2.",
-          owner: "IT",
-          status: "Due soon",
-        },
-        {
-          title: "Complete vendor renewal review",
-          description: "Review updated security documentation for Slack.",
-          owner: "Security",
-          status: "Open",
-        },
-        {
-          title: "Resolve logging retention blocker",
-          description: "Confirm storage ownership and retention configuration.",
-          owner: "Infrastructure",
-          status: "Blocked",
-        },
-      ]}
+      items={tasks.map((task) => ({
+        title: task.title,
+        description: `${task.itemId} · ${task.description}`,
+        owner: task.owner,
+        status: task.status,
+      }))}
+      emptyMessage="No generated implementation tasks."
     />
   );
 }

@@ -4,12 +4,12 @@ import Footer from "../components/Footer";
 import Navbar from "../components/layout/Navbar";
 
 const safeguards = [
-  ["Administrative", "Assign owners, document policies, and track review cycles."],
-  ["Technical", "Monitor access, evidence, and security control implementation."],
-  ["Vendor", "Track business associate reviews and third-party risk signals."],
+  ["Access", "Assign owners, document practices, and track review cycles."],
+  ["Technical", "Monitor evidence and cybersecurity control implementation."],
+  ["Supplier", "Track contractor and third-party readiness signals."],
 ];
 
-export default function HIPAASolution() {
+export default function CMMCSolution() {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-950">
       <Navbar />
@@ -19,14 +19,14 @@ export default function HIPAASolution() {
           <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
             <div>
               <p className="text-sm font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
-                HIPAA Compliance
+                CMMC Compliance
               </p>
               <h1 className="mt-4 text-5xl font-bold leading-tight text-slate-950 dark:text-white md:text-6xl">
-                Coordinate privacy safeguards without losing the thread.
+                Coordinate cybersecurity readiness without losing the thread.
               </h1>
               <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-600 dark:text-slate-300">
-                SpectraMind gives healthcare and health-tech teams a cleaner way
-                to manage safeguards, policies, evidence, vendors, and risk work.
+                SpectraMind gives defense contractors and security teams a cleaner way
+                to manage controls, evidence, suppliers, and audit readiness.
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -49,14 +49,14 @@ export default function HIPAASolution() {
             <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/10 dark:border-slate-800 dark:bg-slate-950">
               <div className="rounded-xl bg-slate-950 p-6 text-white dark:bg-blue-600">
                 <Stethoscope size={30} />
-                <h2 className="mt-5 text-3xl font-bold">PHI-focused workflows</h2>
+                <h2 className="mt-5 text-3xl font-bold">CMMC-focused workflows</h2>
                 <p className="mt-2 text-slate-300 dark:text-blue-100">
-                  Keep policy work, evidence requests, and vendor follow-ups visible.
+                  Keep control work, evidence requests, and supplier follow-ups visible.
                 </p>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <MiniMetric icon={ShieldCheck} label="Safeguards" />
+                <MiniMetric icon={ShieldCheck} label="Controls" />
                 <MiniMetric icon={KeyRound} label="Access" />
                 <MiniMetric icon={FileHeart} label="Evidence" />
               </div>

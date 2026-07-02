@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Database,
   Download,
+  FileUp,
   FileText,
   Filter,
   Layers,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Target,
+  Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import AppShell from "../components/layout/AppShell";
@@ -74,6 +76,37 @@ export default function SOC2() {
   const [category, setCategory] = useState("All");
   const [sortBy, setSortBy] = useState("id");
   const [selectedItem, setSelectedItem] = useState(soc2Controls[0]);
+  const [evidenceByControl, setEvidenceByControl] = useState({});
+
+  const uploadEvidence = (controlId, fileList) => {
+    const files = Array.from(fileList || []);
+
+    if (!controlId || files.length === 0) return;
+
+    const uploaded = files.map((file) => ({
+      id: `${controlId}-${file.name}-${file.lastModified}`,
+      name: file.name,
+      size: file.size,
+      type: file.type || "Evidence file",
+      uploadedAt: new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    }));
+
+    setEvidenceByControl((current) => ({
+      ...current,
+      [controlId]: [...(current[controlId] || []), ...uploaded],
+    }));
+  };
+
+  const removeEvidence = (controlId, evidenceId) => {
+    setEvidenceByControl((current) => ({
+      ...current,
+      [controlId]: (current[controlId] || []).filter((item) => item.id !== evidenceId),
+    }));
+  };
 
   const rows = tabData[activeTab];
   const visibleRows = useMemo(() => {
@@ -235,7 +268,11 @@ export default function SOC2() {
           <div className="grid min-h-[520px] xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="overflow-x-auto">
               {activeTab === "controls" && (
-                <ControlsTable rows={visibleRows} onSelect={setSelectedItem} />
+                <ControlsTable
+                  rows={visibleRows}
+                  onSelect={setSelectedItem}
+                  evidenceByControl={evidenceByControl}
+                />
               )}
               {activeTab === "risks" && (
                 <RisksTable rows={visibleRows} onSelect={setSelectedItem} />
@@ -248,7 +285,13 @@ export default function SOC2() {
               )}
             </div>
 
-            <DetailPanel activeTab={activeTab} item={selectedItem} />
+            <DetailPanel
+              activeTab={activeTab}
+              item={selectedItem}
+              evidenceByControl={evidenceByControl}
+              onUploadEvidence={uploadEvidence}
+              onRemoveEvidence={removeEvidence}
+            />
           </div>
         </section>
       </div>
@@ -281,10 +324,10 @@ function OverviewMetric({ stat }) {
   );
 }
 
-function ControlsTable({ rows, onSelect }) {
+function ControlsTable({ rows, onSelect, evidenceByControl }) {
   return (
     <TableShell
-      headers={["ID", "Title", "Status", "Owner", "Frequency", "Criteria", "Category"]}
+      headers={["ID", "Title", "Status", "Uploads", "Owner", "Frequency", "Criteria", "Category"]}
     >
       {rows.map((control) => (
         <tr key={control.id} className="border-b border-slate-100 last:border-0">
@@ -311,6 +354,11 @@ function ControlsTable({ rows, onSelect }) {
           </Cell>
           <Cell>
             <StatusPill>{control.status}</StatusPill>
+          </Cell>
+          <Cell>
+            <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700">
+              {(evidenceByControl[control.id] || []).length} files
+            </span>
           </Cell>
           <Cell>{control.owner}</Cell>
           <Cell>{control.frequency}</Cell>
@@ -512,7 +560,7 @@ function CriteriaList({ items }) {
   );
 }
 
-function DetailPanel({ activeTab, item }) {
+function DetailPanel({ activeTab, item, evidenceByControl, onUploadEvidence, onRemoveEvidence }) {
   if (!item) {
     return (
       <aside className="border-t border-slate-200 bg-slate-50/80 p-5 xl:border-l xl:border-t-0">
@@ -531,7 +579,14 @@ function DetailPanel({ activeTab, item }) {
       </h2>
 
       <div className="mt-5 space-y-4">
-        {activeTab === "controls" && <ControlDetails item={item} />}
+        {activeTab === "controls" && (
+          <ControlDetails
+            item={item}
+            evidenceFiles={evidenceByControl[item.id] || []}
+            onUploadEvidence={onUploadEvidence}
+            onRemoveEvidence={onRemoveEvidence}
+          />
+        )}
         {activeTab === "risks" && <RiskDetails item={item} />}
         {activeTab === "tests" && <TestDetails item={item} />}
         {activeTab === "populations" && <PopulationDetails item={item} />}
@@ -540,7 +595,7 @@ function DetailPanel({ activeTab, item }) {
   );
 }
 
-function ControlDetails({ item }) {
+function ControlDetails({ item, evidenceFiles, onUploadEvidence, onRemoveEvidence }) {
   return (
     <>
       <DetailBlock label="Mapped Criterion" value={`${item.trustId} - ${item.principle}`} />
@@ -548,6 +603,12 @@ function ControlDetails({ item }) {
       <DetailBlock label="Owner" value={item.owner} />
       <DetailBlock label="Frequency" value={item.frequency} />
       <DetailBlock label="Evidence Type" value={item.evidenceType} />
+      <EvidenceUpload
+        control={item}
+        evidenceFiles={evidenceFiles}
+        onUploadEvidence={onUploadEvidence}
+        onRemoveEvidence={onRemoveEvidence}
+      />
       <div>
         <p className="text-xs font-black uppercase tracking-widest text-slate-500">
           Linked Criteria
@@ -558,6 +619,74 @@ function ControlDetails({ item }) {
       </div>
       <DetailBlock label="Control Focus" value={item.focus} preline />
     </>
+  );
+}
+
+function EvidenceUpload({ control, evidenceFiles, onUploadEvidence, onRemoveEvidence }) {
+  return (
+    <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-4">
+      <div>
+        <p className="text-xs font-black uppercase tracking-widest text-blue-700">
+          Evidence Upload
+        </p>
+        <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
+          Upload evidence directly against {control.id}. Files are held in this
+          prototype session and listed below.
+        </p>
+      </div>
+
+      <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-blue-200 bg-white px-4 py-5 text-center shadow-sm transition hover:border-blue-400 hover:bg-blue-50">
+        <FileUp size={24} className="text-blue-700" />
+        <span className="mt-2 text-sm font-black text-slate-900">
+          Upload evidence files
+        </span>
+        <span className="mt-1 text-xs font-semibold text-slate-500">
+          PDF, CSV, screenshots, exports, or policy documents
+        </span>
+        <input
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            onUploadEvidence(control.id, event.target.files);
+            event.target.value = "";
+          }}
+        />
+      </label>
+
+      <div className="mt-4 space-y-2">
+        {evidenceFiles.length === 0 ? (
+          <p className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-500">
+            No evidence uploaded yet.
+          </p>
+        ) : (
+          evidenceFiles.map((file) => (
+            <div
+              key={file.id}
+              className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 shadow-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-900">
+                  {file.name}
+                </p>
+                <p className="text-xs font-semibold text-slate-500">
+                  {formatBytes(file.size)} · {file.uploadedAt}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onRemoveEvidence(control.id, file.id)}
+                className="rounded-lg p-2 text-rose-600 transition hover:bg-rose-50"
+                aria-label={`Remove ${file.name}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -625,6 +754,19 @@ function detailTitle(activeTab, item) {
   if (activeTab === "risks") return `${item.id}: ${item.title}`;
   if (activeTab === "tests") return `${item.id}: ${item.title}`;
   return `${item.id}: ${item.name}`;
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = bytes / 1024 ** index;
+
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function searchableText(row) {

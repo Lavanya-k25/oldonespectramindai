@@ -58,19 +58,14 @@ export default function Frameworks() {
                 <Metric label="Evidence" value={framework.evidence} />
               </div>
 
-              {framework.name === "SOC 2" ? (
-                <Link
-                  to="/soc2"
-                  className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-semibold text-white transition hover:bg-blue-700"
-                >
-                  View Framework
-                  <ArrowRight size={18} />
-                </Link>
-              ) : (
-                <button className="mt-6 w-full rounded-lg bg-slate-100 px-4 py-3 font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                  Coming Soon
-                </button>
-              )}
+              <Link
+                to={`/implementation?framework=${framework.slug || slugifyFramework(framework.name)}`}
+                state={{ framework }}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-semibold text-white transition hover:bg-blue-700"
+              >
+                View Framework
+                <ArrowRight size={18} />
+              </Link>
             </article>
           ))}
         </div>
@@ -86,4 +81,8 @@ function Metric({ label, value }) {
       <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{value}</p>
     </div>
   );
+}
+
+function slugifyFramework(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }

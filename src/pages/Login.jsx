@@ -111,7 +111,7 @@ export default function Login() {
             <span className="flex h-11 w-11 items-center justify-center rounded-lg border border-blue-600/30 bg-[linear-gradient(135deg,rgba(255,255,255,.95),rgba(216,180,109,.52))] text-xl font-black text-blue-700 shadow-lg shadow-blue-600/20">
               S
             </span>
-            <span className="text-2xl font-black">SpectraMinds.ai</span>
+            <span className="text-2xl font-black">SpectraMind</span>
           </Link>
 
           <div className="relative flex flex-1 flex-col justify-center py-8">
@@ -170,7 +170,7 @@ export default function Login() {
               </div>
               <h2 className="text-4xl font-black">Sign in</h2>
               <p className="mt-3 leading-7 text-slate-600">
-                Use your work email or continue with Google to access SpectraMinds.
+                Use your work email or continue with Google to access SpectraMind.
               </p>
             </div>
 
@@ -248,7 +248,7 @@ export default function Login() {
             </form>
 
             <p className="mt-8 text-center text-sm text-slate-500">
-              Need access? Contact your SpectraMinds administrator.
+              Need access? Contact your SpectraMind administrator.
             </p>
           </div>
         </section>

@@ -1,40 +1,32 @@
 import { AlertTriangle, Plus } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
-
-const risks = [
-  {
-    id: 1,
-    title: "Weak Password Policy",
-    severity: "High",
-    owner: "Security Team",
-    dueDate: "July 15, 2026",
-    status: "Open",
-  },
-  {
-    id: 2,
-    title: "Unpatched Server",
-    severity: "Critical",
-    owner: "Infrastructure Team",
-    dueDate: "June 30, 2026",
-    status: "In Progress",
-  },
-  {
-    id: 3,
-    title: "Missing Access Review",
-    severity: "Medium",
-    owner: "Compliance Team",
-    dueDate: "August 01, 2026",
-    status: "Open",
-  },
-];
+import { useFrameworkData } from "../core/adapters/useFrameworkData";
+import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
 
 const severityStyles = {
   Critical: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
   High: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
   Medium: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  Low: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
 };
 
 export default function Risks() {
+  const { risks: frameworkRisks } = useFrameworkData("soc-2");
+  const { workspaceData } = useOrganizationStore();
+
+  // Wire up the mock array to the actual engines
+  const risks = frameworkRisks.map((risk) => {
+    const saved = workspaceData[risk.id] ?? {};
+    return {
+      id: risk.id,
+      title: risk.title,
+      severity: risk.severity || "Medium",
+      owner: saved.assignments?.owner || "Unassigned",
+      dueDate: saved.dueDate || "No due date",
+      status: saved.status || "Open",
+    };
+  });
+
   return (
     <AppShell>
       <div className="space-y-6">

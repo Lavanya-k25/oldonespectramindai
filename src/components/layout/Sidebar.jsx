@@ -1,15 +1,14 @@
 import {
-  AlertTriangle,
   Bot,
-  Building2,
   CheckSquare,
   ClipboardCheck,
   ClipboardList,
   FileText,
-  FolderOpen,
+  GraduationCap,
   LayoutDashboard,
   Lock,
   MessageSquare,
+  Plug,
   Settings,
   ShieldCheck,
   Users,
@@ -21,14 +20,13 @@ const dashboardItem = { name: "Dashboard", path: "/dashboard", icon: LayoutDashb
 
 const complianceItems = [
   { name: "AI Assistant", path: "/assistant", icon: Bot },
-  { name: "Frameworks", path: "/frameworks", icon: ShieldCheck },
-  { name: "Policies", path: "/policies", icon: FileText },
-  { name: "Evidence", path: "/evidence", icon: FolderOpen },
-  { name: "Risks", path: "/risks", icon: AlertTriangle },
-  { name: "Vendors", path: "/vendors", icon: Building2 },
+  { name: "Framework", path: "/frameworks", icon: ShieldCheck },
   { name: "Questionnaire", path: "/questionnaire", icon: ClipboardList },
   { name: "Implementation", path: "/implementation", icon: Wrench },
+  { name: "Policies", path: "/policies", icon: FileText },
+  { name: "Training", path: "/training", icon: GraduationCap },
   { name: "Employees", path: "/employees", icon: Users },
+  { name: "Integrations", path: "/integrations", icon: Plug },
   { name: "Audits", path: "/audits", icon: ClipboardCheck },
   { name: "Comments", path: "/comments", icon: MessageSquare },
   { name: "Tasks", path: "/tasks", icon: CheckSquare },
@@ -48,19 +46,15 @@ export default function Sidebar() {
         to="/dashboard"
         className="flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/60"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-blue-600/30 bg-[linear-gradient(135deg,rgba(255,255,255,.95),rgba(216,180,109,.52))] text-lg font-black text-blue-700 shadow-lg shadow-blue-600/20">
-          S
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-blue-600/30 bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-600/20">
+          R
         </span>
         <div>
-          <p className="text-xl font-black leading-tight">
-            Spectra
-            <span className="bg-[linear-gradient(135deg,#8f5f24_0%,#b98232_30%,#d3a853_56%,#a76e29_82%,#6f491f_100%)] bg-clip-text text-transparent">
-              Minds
-            </span>
-            .ai
+          <p className="text-xl font-black leading-tight text-slate-950">
+            Rette
           </p>
-          <p className="text-xs font-medium text-slate-500">
-            Trust operations
+          <p className="text-[10px] font-bold text-slate-400">
+            Powered by COOP
           </p>
         </div>
       </Link>

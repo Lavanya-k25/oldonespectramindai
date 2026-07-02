@@ -9,6 +9,7 @@ export default function ComplianceModulePage({
   metrics,
   items,
   actionLabel,
+  emptyMessage = "No current work.",
 }) {
   return (
     <AppShell>
@@ -72,7 +73,7 @@ export default function ComplianceModulePage({
           </div>
 
           <div className="divide-y divide-slate-100">
-            {items.map((item) => (
+            {items.length ? items.map((item) => (
               <div
                 key={item.title}
                 className="grid gap-4 px-6 py-5 lg:grid-cols-[1fr_160px_140px]"
@@ -99,7 +100,11 @@ export default function ComplianceModulePage({
                   {item.status}
                 </span>
               </div>
-            ))}
+            )) : (
+              <div className="px-6 py-10 text-center text-sm font-semibold text-slate-500">
+                {emptyMessage}
+              </div>
+            )}
           </div>
         </section>
       </div>

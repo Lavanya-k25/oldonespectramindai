@@ -10,7 +10,7 @@ const queues = [
 const rows = [
   ["Access review", "Ready", "SOC 2 CC6.2"],
   ["Incident response policy", "Needs owner", "ISO A.5.24"],
-  ["Vendor renewal", "Due soon", "HIPAA"],
+  ["Vendor renewal", "Due soon", "CMMC"],
   ["Risk treatment plan", "In review", "SOC 2 CC3.2"],
 ];
 

@@ -7,7 +7,7 @@ export default function Footer() {
         <div className="grid gap-10 md:grid-cols-4">
           <div>
             <h2 className="text-3xl font-black">
-              SpectraMinds.ai
+              SpectraMind
             </h2>
             <p className="mt-4 max-w-sm leading-relaxed text-slate-600">
               A unified platform for compliance management, evidence
@@ -19,7 +19,7 @@ export default function Footer() {
           <FooterGroup title="Solutions">
             <FooterLink to="/solutions/soc2">SOC 2 Compliance</FooterLink>
             <FooterLink to="/solutions/iso27001">ISO 27001</FooterLink>
-            <FooterLink to="/solutions/hipaa">HIPAA</FooterLink>
+            <FooterLink to="/solutions/cmmc">CMMC</FooterLink>
           </FooterGroup>
 
           <FooterGroup title="Resources">
@@ -37,7 +37,7 @@ export default function Footer() {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-7 md:flex-row md:items-center">
           <p className="text-sm text-slate-500">
-            &copy; 2026 SpectraMinds.ai. All rights reserved.
+            &copy; 2026 SpectraMind. All rights reserved.
           </p>
           <p className="text-sm text-slate-500">
             Built for modern compliance teams.

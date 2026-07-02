@@ -5,7 +5,7 @@ import heroArt from "../../assets/hero.png";
 const readinessItems = [
   ["SOC 2", "78%", "Evidence due in 4 days"],
   ["ISO 27001", "64%", "Risk review active"],
-  ["HIPAA", "91%", "Policies approved"],
+  ["CMMC", "91%", "Policies approved"],
 ];
 
 const activity = [
@@ -31,7 +31,7 @@ export default function Hero() {
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            SpectraMinds gives security teams a live operating system for
+            SpectraMind gives security teams a live operating system for
             controls, evidence, risk decisions, vendor reviews, and customer
             trust reporting.
           </p>

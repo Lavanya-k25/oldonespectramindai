@@ -9,45 +9,66 @@ import {
 import ActivityFeed from "../components/dashboard/ActivityFeed";
 import ComplianceChart from "../components/dashboard/ComplianceChart";
 import AppShell from "../components/layout/AppShell";
-
-const stats = [
-  {
-    label: "Compliance Score",
-    value: "85%",
-    note: "+12% this month",
-    icon: ShieldCheck,
-    tone: "text-emerald-600",
-  },
-  {
-    label: "Evidence Files",
-    value: "124",
-    note: "24 uploaded recently",
-    icon: FileCheck2,
-    tone: "text-blue-700",
-  },
-  {
-    label: "Open Risks",
-    value: "5",
-    note: "2 high priority",
-    icon: AlertTriangle,
-    tone: "text-rose-600",
-  },
-  {
-    label: "Vendors",
-    value: "21",
-    note: "3 pending reviews",
-    icon: Building2,
-    tone: "text-violet-600",
-  },
-];
-
-const readiness = [
-  ["Access reviews", "Complete"],
-  ["Incident response", "Needs evidence"],
-  ["Vendor due diligence", "In progress"],
-];
+import { useProgressData } from "../core/adapters/useProgressData";
 
 export default function Dashboard() {
+  // All dashboard metrics are calculated by ProgressEngineService —
+  // no values are hardcoded. Change your workspace in the Implementation
+  // page and the dashboard will reflect the updated numbers.
+  const { summary } = useProgressData("soc-2");
+
+  const auditReadiness = Math.round(summary.auditReadinessScore ?? 0);
+  const overallScore = Math.round(summary.overallComplianceScore ?? 0);
+  const highRisks = summary.riskBreakdown?.High ?? summary.riskBreakdown?.high ?? 0;
+  const criticalRisks = summary.riskBreakdown?.Critical ?? summary.riskBreakdown?.critical ?? 0;
+  const openRisks = summary.riskCoverage?.total - summary.riskCoverage?.completed;
+  const evidenceTotal = summary.evidenceCoverage?.total ?? 0;
+  const pendingCount = summary.pendingEvidence?.length ?? 0;
+  const overdueCount = summary.overdueTasks?.length ?? 0;
+
+  // Stats cards — same structure as before, values now from ProgressEngine
+  const stats = [
+    {
+      label: "Compliance Score",
+      value: `${overallScore}%`,
+      note: `${summary.controlCompletion?.completed ?? 0} of ${summary.controlCompletion?.total ?? 0} controls done`,
+      icon: ShieldCheck,
+      tone: "text-emerald-600",
+    },
+    {
+      label: "Evidence Files",
+      value: String(evidenceTotal),
+      note: `${pendingCount} pending review`,
+      icon: FileCheck2,
+      tone: "text-blue-700",
+    },
+    {
+      label: "Open Risks",
+      value: String(isNaN(openRisks) ? 0 : openRisks),
+      note: `${highRisks + criticalRisks} high/critical`,
+      icon: AlertTriangle,
+      tone: "text-rose-600",
+    },
+    {
+      label: "Overdue Tasks",
+      value: String(overdueCount),
+      note: overdueCount === 0 ? "None overdue" : `${overdueCount} past due date`,
+      icon: Building2,
+      tone: "text-violet-600",
+    },
+  ];
+
+  // Readiness queue — shows top 3 missing controls (falling back to static
+  // labels if the workspace has no tracked items yet)
+  const missingControls = summary.missingControls ?? [];
+  const readiness = missingControls.length > 0
+    ? missingControls.slice(0, 3).map((c) => [c.id, "Needs attention"])
+    : [
+        ["Access reviews", "Needs attention"],
+        ["Incident response", "Needs evidence"],
+        ["Vendor due diligence", "In progress"],
+      ];
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -79,16 +100,21 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-blue-700">SOC 2 Audit Readiness</p>
-                  <h2 className="text-4xl font-black">78% ready</h2>
+                  <h2 className="text-4xl font-black">{auditReadiness}% ready</h2>
                 </div>
               </div>
 
               <div className="mt-8 h-3 rounded-full bg-slate-100">
-                <div className="h-3 w-[78%] rounded-full bg-[linear-gradient(90deg,#8eaf99,#d8b46d,#9d6f38)]" />
+                <div
+                  className="h-3 rounded-full bg-[linear-gradient(90deg,#8eaf99,#d8b46d,#9d6f38)] transition-all duration-700"
+                  style={{ width: `${auditReadiness}%` }}
+                />
               </div>
 
               <p className="mt-4 max-w-2xl text-slate-600">
-                You are on track, but incident response evidence and vendor reviews still need attention.
+                {auditReadiness >= 80
+                  ? "You are well on track. Keep completing outstanding evidence and controls."
+                  : "Keep going — complete outstanding controls and evidence to improve your audit readiness score."}
               </p>
             </div>
 

@@ -17,7 +17,7 @@ export const frameworks = [
   },
   {
     id: 3,
-    name: "HIPAA",
+    name: "CMMC",
     progress: 35,
     controls: 47,
     evidence: 42,

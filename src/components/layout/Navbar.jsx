@@ -63,7 +63,7 @@ const productColumns = [
     items: [
       ["SOC 2", "Prepare for SOC 2 with controls, evidence, and audit readiness.", "/solutions/soc2"],
       ["ISO 27001", "Build and manage an information security program.", "/solutions/iso27001"],
-      ["HIPAA", "Manage healthcare security and privacy requirements.", "/solutions/hipaa"],
+      ["CMMC", "Prepare for defense cybersecurity requirements.", "/solutions/cmmc"],
       ["ISO 42001", "Manage responsible AI governance and AI system controls.", "/frameworks"],
       ["CMMC 2.0", "Prepare for U.S. defense cybersecurity requirements.", "/frameworks"],
       ["FAR", "Manage federal contracting security requirements.", "/frameworks"],

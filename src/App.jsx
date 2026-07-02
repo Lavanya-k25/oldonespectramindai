@@ -10,7 +10,9 @@ import Risks from "./pages/Risks";
 import Vendors from "./pages/Vendors";
 import Questionnaire from "./pages/Questionnaire";
 import Implementation from "./pages/Implementation";
+import Training from "./pages/Training";
 import Employees from "./pages/Employees";
+import Integrations from "./pages/Integrations";
 import Audits from "./pages/Audits";
 import Comments from "./pages/Comments";
 import Tasks from "./pages/Tasks";
@@ -36,7 +38,7 @@ import Testimonials from "./pages/Testimonials";
 
 import SOC2Solution from "./pages/SOC2Solution";
 import ISO27001Solution from "./pages/ISO27001Solution";
-import HIPAASolution from "./pages/HIPAASolution";
+import CMMCSolution from "./pages/CMMCSolution";
 
 function App() {
   return (
@@ -66,7 +68,9 @@ function App() {
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/questionnaire" element={<Questionnaire />} />
         <Route path="/implementation" element={<Implementation />} />
+        <Route path="/training" element={<Training />} />
         <Route path="/employees" element={<Employees />} />
+        <Route path="/integrations" element={<Integrations />} />
         <Route path="/audits" element={<Audits />} />
         <Route path="/comments" element={<Comments />} />
         <Route path="/tasks" element={<Tasks />} />
@@ -74,6 +78,7 @@ function App() {
         <Route path="/trust-center" element={<TrustCenter />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/soc2" element={<SOC2 />} />
+        <Route path="/implementation/soc2" element={<SOC2 />} />
 
         <Route
   path="/control/:id"
@@ -101,8 +106,8 @@ function App() {
 />
 
 <Route
-  path="/solutions/hipaa"
-  element={<HIPAASolution />}
+  path="/solutions/cmmc"
+  element={<CMMCSolution />}
 />
 
     <Route path="/policies" element={<Policies />} />
