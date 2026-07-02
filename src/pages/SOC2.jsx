@@ -329,8 +329,8 @@ function ControlsTable({ rows, onSelect, evidenceByControl }) {
     <TableShell
       headers={["ID", "Title", "Status", "Uploads", "Owner", "Frequency", "Criteria", "Category"]}
     >
-      {rows.map((control) => (
-        <tr key={control.id} className="border-b border-slate-100 last:border-0">
+      {rows.map((control, index) => (
+        <tr key={`${control.id}-${index}`} className="border-b border-slate-100 last:border-0">
           <Cell strong>
             <button
               type="button"
@@ -377,8 +377,8 @@ function RisksTable({ rows, onSelect }) {
     <TableShell
       headers={["ID", "Risk Scenario", "Trust ID", "Severity", "Controls", "Category"]}
     >
-      {rows.map((risk) => (
-        <tr key={risk.id} className="border-b border-slate-100 last:border-0">
+      {rows.map((risk, index) => (
+        <tr key={`${risk.id}-${index}`} className="border-b border-slate-100 last:border-0">
           <Cell strong>
             <button
               type="button"
@@ -417,8 +417,8 @@ function TestsTable({ rows, onSelect }) {
     <TableShell
       headers={["ID", "Title", "Status", "Assigned To", "Evidence", "Control", "Category"]}
     >
-      {rows.map((test) => (
-        <tr key={test.id} className="border-b border-slate-100 last:border-0">
+      {rows.map((test, index) => (
+        <tr key={`${test.id}-${index}`} className="border-b border-slate-100 last:border-0">
           <Cell strong>
             <button
               type="button"
@@ -456,8 +456,8 @@ function TestsTable({ rows, onSelect }) {
 function PopulationsTable({ rows, onSelect }) {
   return (
     <TableShell headers={["ID", "Population", "Source", "Period", "Controls"]}>
-      {rows.map((population) => (
-        <tr key={population.id} className="border-b border-slate-100 last:border-0">
+      {rows.map((population, index) => (
+        <tr key={`${population.id}-${index}`} className="border-b border-slate-100 last:border-0">
           <Cell strong>
             <button
               type="button"

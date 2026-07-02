@@ -36,7 +36,9 @@ const QUESTIONNAIRE_KEY = "spectramind:onboarding-questionnaire";
 function loadEngineWorkspace() {
   try {
     const raw = localStorage.getItem(ENGINE_WORKSPACE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
   }
@@ -55,7 +57,9 @@ function persistEngineWorkspace(workspace) {
 function loadLegacyWorkspace() {
   try {
     const raw = localStorage.getItem(LEGACY_WORKSPACE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }

@@ -122,7 +122,7 @@ export default function Implementation() {
     }
 
     const risks = rawImplementationData.risks.map((r) => {
-      const saved = workspaceData[r.id] ?? {};
+      const saved = (workspaceData && workspaceData[r.id]) ?? {};
       const initialLikelihood = saved.initialLikelihood ?? 3;
       const initialImpact = saved.initialImpact ?? 5;
       const residualLikelihood = saved.residualLikelihood ?? 1;
@@ -138,7 +138,7 @@ export default function Implementation() {
     });
 
     const controls = rawImplementationData.controls.map((c) => {
-      const saved = workspaceData[c.id] ?? {};
+      const saved = (workspaceData && workspaceData[c.id]) ?? {};
       return {
         ...c,
         owner: saved.assignments?.owner || "Unassigned",
@@ -148,7 +148,7 @@ export default function Implementation() {
     });
 
     const tests = rawImplementationData.tests.map((t) => {
-      const saved = workspaceData[t.id] ?? {};
+      const saved = (workspaceData && workspaceData[t.id]) ?? {};
       return {
         ...t,
         owner: saved.assignments?.owner || "Unassigned",
@@ -158,7 +158,7 @@ export default function Implementation() {
     });
 
     const policies = rawImplementationData.policies.map((p) => {
-      const saved = workspaceData[p.id] ?? {};
+      const saved = (workspaceData && workspaceData[p.id]) ?? {};
       return {
         ...p,
         owner: saved.assignments?.owner || "Unassigned",
@@ -249,6 +249,7 @@ export default function Implementation() {
               selectedFramework={selectedFramework}
               data={implementationData}
               questionnaireResponses={questionnaireResponses}
+              workspaceData={workspaceData}
               onSelectWorkspaceItem={selectWorkspaceItem}
             />
           </div>
@@ -260,7 +261,7 @@ export default function Implementation() {
               framework={selectedFramework}
               data={implementationData}
               questionnaireResponses={questionnaireResponses}
-              savedState={workspaceData[workspaceItem.id]}
+              savedState={workspaceData && workspaceData[workspaceItem.id]}
               relationshipGraph={relationshipGraph}
               onWorkspaceStateChange={(itemId, nextState) => {
                 // Route through OrganizationEngine for proper audit tracking,
@@ -477,37 +478,37 @@ function ExportMenu({ compact = false, data = emptyImplementationData }) {
   );
 }
 
-function TabPanel({ activeTab, selectedFramework, data, questionnaireResponses, onSelectWorkspaceItem }) {
+function TabPanel({ activeTab, selectedFramework, data, questionnaireResponses, workspaceData, onSelectWorkspaceItem }) {
   if (activeTab === "Controls") {
     return (
-      <ControlsSection rows={data.controls} questionnaireResponses={questionnaireResponses} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+      <ControlsSection rows={data.controls} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
     );
   }
 
   if (activeTab === "Risk Scenarios") {
     return (
-      <RiskScenariosSection rows={data.risks} questionnaireResponses={questionnaireResponses} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+      <RiskScenariosSection rows={data.risks} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
     );
   }
 
   if (activeTab === "Tests") {
     return (
-      <TestsSection rows={data.tests} questionnaireResponses={questionnaireResponses} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+      <TestsSection rows={data.tests} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
     );
   }
 
   if (activeTab === "Policies") {
     return (
-      <PoliciesSection rows={data.policies} questionnaireResponses={questionnaireResponses} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+      <PoliciesSection rows={data.policies} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
     );
   }
 
   return (
-    <PopulationSection rows={data.populations} questionnaireResponses={questionnaireResponses} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+    <PopulationSection rows={data.populations} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
   );
 }
 
-function RiskScenariosSection({ rows, questionnaireResponses, selectedFramework, onSelectWorkspaceItem }) {
+function RiskScenariosSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
   const [sortBy, setSortBy] = useState("dueDate");
@@ -702,7 +703,7 @@ function RiskScenariosSection({ rows, questionnaireResponses, selectedFramework,
                 )}
                 {visibleColumns.status && (
                   <RiskCell>
-                    <RiskPill>{applicability}</RiskPill>
+                    {renderStatusPill(risk, applicability, workspaceData)}
                   </RiskCell>
                 )}
                 {visibleColumns.owner && <RiskCell>{risk.owner}</RiskCell>}
@@ -730,7 +731,7 @@ function RiskScenariosSection({ rows, questionnaireResponses, selectedFramework,
   );
 }
 
-function ControlsSection({ rows, questionnaireResponses, selectedFramework, onSelectWorkspaceItem }) {
+function ControlsSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
   const [sortBy, setSortBy] = useState("dueDate");
@@ -892,7 +893,7 @@ function ControlsSection({ rows, questionnaireResponses, selectedFramework, onSe
                   )}
                 </RiskCell>
                 <RiskCell>
-                  <RiskPill>{applicability}</RiskPill>
+                  {renderStatusPill(control, applicability, workspaceData)}
                 </RiskCell>
                 <RiskCell>{control.owner}</RiskCell>
                 <RiskCell>{control.dueDate}</RiskCell>
@@ -912,7 +913,7 @@ function ControlsSection({ rows, questionnaireResponses, selectedFramework, onSe
   );
 }
 
-function TestsSection({ rows, questionnaireResponses, selectedFramework, onSelectWorkspaceItem }) {
+function TestsSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
   const [sortBy, setSortBy] = useState("dueDate");
@@ -1066,7 +1067,7 @@ function TestsSection({ rows, questionnaireResponses, selectedFramework, onSelec
                   </span>
                 </RiskCell>
                 <RiskCell>
-                  <RiskPill>{applicability}</RiskPill>
+                  {renderStatusPill(test, applicability, workspaceData)}
                 </RiskCell>
                 <RiskCell>{test.owner}</RiskCell>
                 <RiskCell>{test.dueDate}</RiskCell>
@@ -1089,7 +1090,7 @@ function TestsSection({ rows, questionnaireResponses, selectedFramework, onSelec
   );
 }
 
-function PoliciesSection({ rows, questionnaireResponses, selectedFramework, onSelectWorkspaceItem }) {
+function PoliciesSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
   const [sortBy, setSortBy] = useState("title");
@@ -1208,7 +1209,7 @@ function PoliciesSection({ rows, questionnaireResponses, selectedFramework, onSe
                 </RiskCell>
                 <RiskCell strong>{policy.id}</RiskCell>
                 <RiskCell><span className="font-black text-slate-900">{policy.title}</span></RiskCell>
-                <RiskCell><RiskPill>{applicability}</RiskPill></RiskCell>
+                <RiskCell>{renderStatusPill(policy, applicability, workspaceData)}</RiskCell>
                 <RiskCell>{policy.owner}</RiskCell>
                 <RiskCell>{policy.dueDate}</RiskCell>
                 <RiskCell>{policy.category}</RiskCell>
@@ -1224,7 +1225,7 @@ function PoliciesSection({ rows, questionnaireResponses, selectedFramework, onSe
   );
 }
 
-function PopulationSection({ rows, questionnaireResponses, selectedFramework, onSelectWorkspaceItem }) {
+function PopulationSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
   const [sortBy, setSortBy] = useState("dueDate");
@@ -1343,7 +1344,7 @@ function PopulationSection({ rows, questionnaireResponses, selectedFramework, on
                 </RiskCell>
                 <RiskCell strong>{population.id}</RiskCell>
                 <RiskCell><span className="font-black text-slate-900">{population.title}</span></RiskCell>
-                <RiskCell><RiskPill>{applicability}</RiskPill></RiskCell>
+                <RiskCell>{renderStatusPill(population, applicability, workspaceData)}</RiskCell>
                 <RiskCell>{population.owner}</RiskCell>
                 <RiskCell>{population.dueDate}</RiskCell>
                 <RiskCell>{population.category}</RiskCell>
@@ -1361,23 +1362,22 @@ function PopulationSection({ rows, questionnaireResponses, selectedFramework, on
 }
 
 function ImplementationWorkspace({ item, framework, data, questionnaireResponses, savedState = {}, onWorkspaceStateChange, onSelectItem, onClose, relationshipGraph }) {
-  // RelationshipEngine resolves linked items via graph lookups.
-  // Falls back to array-based resolution when graph is not yet seeded.
+  const state = savedState || {};
   const linkedItems = getLinkedItemsFromGraph(item, data, relationshipGraph);
-  const [organizationStatus, setOrganizationStatus] = useState(savedState.status || "");
-  const [dueDate, setDueDate] = useState(savedState.dueDate || "");
+  const [organizationStatus, setOrganizationStatus] = useState(state.status || "");
+  const [dueDate, setDueDate] = useState(state.dueDate || "");
   const [assignments, setAssignments] = useState({
-    owner: savedState.assignments?.owner || "Unassigned",
-    reviewer: savedState.assignments?.reviewer || "Unassigned",
-    approver: savedState.assignments?.approver || "Unassigned",
+    owner: state.assignments?.owner || "Unassigned",
+    reviewer: state.assignments?.reviewer || "Unassigned",
+    approver: state.assignments?.approver || "Unassigned",
   });
-  const [evidenceFiles, setEvidenceFiles] = useState(savedState.evidenceFiles || []);
-  const [evidenceByRequirement, setEvidenceByRequirement] = useState(savedState.evidenceByRequirement || {});
+  const [evidenceFiles, setEvidenceFiles] = useState(state.evidenceFiles || []);
+  const [evidenceByRequirement, setEvidenceByRequirement] = useState(state.evidenceByRequirement || {});
   const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState(savedState.comments || []);
-  const [timeline, setTimeline] = useState(savedState.timeline || []);
+  const [comments, setComments] = useState(state.comments || []);
+  const [timeline, setTimeline] = useState(state.timeline || []);
   const [taskText, setTaskText] = useState("");
-  const [tasks, setTasks] = useState(savedState.tasks || []);
+  const [tasks, setTasks] = useState(state.tasks || []);
 
   // Load dynamic employee list (no fake fallbacks)
   const [employeesList, setEmployeesList] = useState(() => {
@@ -1393,11 +1393,11 @@ function ImplementationWorkspace({ item, framework, data, questionnaireResponses
   });
 
   // Risk Parameters
-  const [initialLikelihood, setInitialLikelihood] = useState(savedState.initialLikelihood ?? 3);
-  const [initialImpact, setInitialImpact] = useState(savedState.initialImpact ?? 5);
-  const [treatment, setTreatment] = useState(savedState.treatment ?? "Minimize");
-  const [residualLikelihood, setResidualLikelihood] = useState(savedState.residualLikelihood ?? 1);
-  const [residualImpact, setResidualImpact] = useState(savedState.residualImpact ?? 3);
+  const [initialLikelihood, setInitialLikelihood] = useState(state.initialLikelihood ?? 3);
+  const [initialImpact, setInitialImpact] = useState(state.initialImpact ?? 5);
+  const [treatment, setTreatment] = useState(state.treatment ?? "Minimize");
+  const [residualLikelihood, setResidualLikelihood] = useState(state.residualLikelihood ?? 1);
+  const [residualImpact, setResidualImpact] = useState(state.residualImpact ?? 3);
 
   const saveWorkspaceState = (overrides = {}) => {
     onWorkspaceStateChange(item.id, {
@@ -1514,7 +1514,7 @@ function ImplementationWorkspace({ item, framework, data, questionnaireResponses
 
   // ── 1. TEST DRAWER LAYOUT ──────────────────────────────────────────────────
   if (item.type === "Test") {
-    const isNotApplicable = organizationStatus === "Not Applicable" || organizationStatus === "not_applicable" || organizationStatus === "";
+    const isNotApplicable = organizationStatus === "Not Applicable" || organizationStatus === "not_applicable";
 
     return (
       <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-sm space-y-6 w-full xl:w-[420px]">
@@ -2418,22 +2418,41 @@ function completedCount(rows, predicate) {
   return rows.filter(predicate).length;
 }
 
+function renderStatusPill(row, defaultApplicability, workspaceData) {
+  const saved = (workspaceData && workspaceData[row.id]) || {};
+  const status = String(saved.status || row.status || "").toLowerCase();
+
+  if (status === "not_applicable" || status === "not applicable") {
+    return <RiskPill tone="Medium">Not Applicable</RiskPill>;
+  }
+  if (["complete", "completed", "implemented", "approved"].includes(status)) {
+    return <RiskPill tone="Low">Implemented</RiskPill>;
+  }
+  if (defaultApplicability === "Not applicable") {
+    return <RiskPill tone="Medium">Not Applicable</RiskPill>;
+  }
+  return <RiskPill>Applicable</RiskPill>;
+}
+
 function isCompletedStatus(row, workspaceData) {
   return ["complete", "completed", "implemented", "ready", "approved"].includes(
-    String(workspaceData[row.id]?.status || "").toLowerCase()
+    String((workspaceData && workspaceData[row.id]?.status) || "").toLowerCase()
   );
 }
 
 function isApprovedStatus(row, workspaceData) {
   return ["approved", "complete", "completed"].includes(
-    String(workspaceData[row.id]?.status || "").toLowerCase()
+    String((workspaceData && workspaceData[row.id]?.status) || "").toLowerCase()
   );
 }
 
 function hasUploadedEvidence(row, workspaceData) {
+  if (!workspaceData) return false;
+  const itemData = workspaceData[row.id];
+  if (!itemData) return false;
   return Boolean(
-    workspaceData[row.id]?.evidenceFiles?.length ||
-      Object.values(workspaceData[row.id]?.evidenceByRequirement || {}).some((files) => files.length)
+    itemData.evidenceFiles?.length ||
+      Object.values(itemData.evidenceByRequirement || {}).some((files) => files.length)
   );
 }
 
