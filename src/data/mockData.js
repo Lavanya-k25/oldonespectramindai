@@ -9,7 +9,8 @@ export const frameworks = [
   },
   {
     id: 2,
-    name: "ISO 27001",
+    name: "ISO 27001:2022",
+    slug: "iso-27001",
     progress: 60,
     controls: 93,
     evidence: 81,

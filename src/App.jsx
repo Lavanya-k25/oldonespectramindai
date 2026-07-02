@@ -10,6 +10,7 @@ import Risks from "./pages/Risks";
 import Vendors from "./pages/Vendors";
 import Questionnaire from "./pages/Questionnaire";
 import Implementation from "./pages/Implementation";
+import MandatoryDocumentUpload from "./pages/MandatoryDocumentUpload";
 import Training from "./pages/Training";
 import Employees from "./pages/Employees";
 import Integrations from "./pages/Integrations";
@@ -69,6 +70,7 @@ function App() {
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/questionnaire" element={<Questionnaire />} />
         <Route path="/implementation" element={<Implementation />} />
+        <Route path="/implementation/mandatory-documents/:documentId/upload" element={<MandatoryDocumentUpload />} />
         <Route path="/training" element={<Training />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/integrations" element={<Integrations />} />

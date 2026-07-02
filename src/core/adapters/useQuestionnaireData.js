@@ -2,8 +2,7 @@
  * useQuestionnaireData.js
  *
  * Adapter that bridges the FrameworkEngine's JSON-based questionnaire
- * (src/core/framework-library/soc2/questionnaire.json) to the MCQ shape
- * that Questionnaire.jsx already renders.
+ * to the interactive questionnaire UI.
  *
  * Storage is delegated to the existing localStorage helpers in
  * src/data/questionnaireEngine.js — fully backward compatible, same key.
@@ -11,15 +10,11 @@
 
 import { useMemo } from "react";
 import { FrameworkEngine } from "../engines/framework-engine/frameworkEngine";
-
-const DEFAULT_FRAMEWORK_ID = "soc2-type-ii";
+import { DEFAULT_FRAMEWORK_ID, resolveFrameworkId } from "../engines/framework-engine/frameworkRegistry";
 
 /**
- * Returns questionnaire sections shaped as:
- *   { id, title, questions: [{ key, label, type, options }] }
- *
- * This matches the legacy questionnaireSections format that Questionnaire.jsx
- * already iterates over.
+ * Returns questionnaire sections shaped for Questionnaire.jsx while preserving
+ * richer JSON schema fields such as descriptions, uploads, and sub-questions.
  *
  * @param {string} [frameworkId]
  * @returns {{ id: string, title: string, questions: object[] }[]}
@@ -28,7 +23,7 @@ export function useQuestionnaireSections(frameworkId = DEFAULT_FRAMEWORK_ID) {
   return useMemo(() => {
     let engine;
     try {
-      engine = new FrameworkEngine(frameworkId);
+      engine = new FrameworkEngine(resolveFrameworkId(frameworkId) || DEFAULT_FRAMEWORK_ID);
     } catch {
       return [];
     }
@@ -40,11 +35,29 @@ export function useQuestionnaireSections(frameworkId = DEFAULT_FRAMEWORK_ID) {
       id: section.id,
       title: section.title,
       questions: (section.questions ?? []).map((q) => ({
-        // Use the JSON question id as the storage key (e.g. "Q-ORG-001")
         key: q.id,
         label: q.question,
         type: normalizeType(q.type),
         options: q.options ?? [],
+        required: q.required ?? true,
+        description: q.description ?? "",
+        helpText: q.helpText ?? "",
+        placeholder: q.placeholder ?? "",
+        uploadEnabled: Boolean(q.uploadEnabled),
+        fields: q.fields ?? [],
+        systems: q.systems ?? [],
+        subQuestions: (q.subQuestions ?? []).map((subQuestion) => ({
+          key: subQuestion.id,
+          label: subQuestion.question,
+          type: normalizeType(subQuestion.type),
+          options: subQuestion.options ?? [],
+          required: subQuestion.required ?? false,
+          description: subQuestion.description ?? "",
+          helpText: subQuestion.helpText ?? "",
+          placeholder: subQuestion.placeholder ?? "",
+          uploadEnabled: Boolean(subQuestion.uploadEnabled),
+          fields: subQuestion.fields ?? [],
+        })),
         signals: deriveSignals(q),
         relatedControls: q.relatedControls ?? [],
       })),
@@ -55,14 +68,16 @@ export function useQuestionnaireSections(frameworkId = DEFAULT_FRAMEWORK_ID) {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Normalises question type strings from the JSON schema to the values
- * that Questionnaire.jsx's rendering branches on ("mcq" | "boolean" | "text").
+ * Normalises question type strings from the JSON schema to rendering branches.
  */
 function normalizeType(type) {
-  if (type === "single_select") return "mcq";
-  if (type === "multi_select") return "mcq";
-  if (type === "boolean") return "boolean";
-  return "mcq";
+  if (type === "single_select" || type === "boolean") return "radio";
+  if (type === "multi_select") return "checkbox";
+  if (type === "long_text") return "textarea";
+  if (type === "file_upload") return "file";
+  if (type === "system_table" || type === "table") return "system_table";
+  if (type === "text") return "text";
+  return "textarea";
 }
 
 /**
@@ -84,6 +99,10 @@ function deriveSignals(q) {
     if (/^C1/.test(controlId)) signals.add("Confidentiality").add("Data Protection").add("Encryption");
     if (/^P[0-9]/.test(controlId)) signals.add("Privacy").add("Data Protection");
     if (/^PI/.test(controlId)) signals.add("Processing Integrity");
+    if (/^5\./.test(controlId)) signals.add("Governance").add("Operations").add("Risk Assessment").add("Vendor Management");
+    if (/^6\./.test(controlId)) signals.add("Workforce").add("Training").add("Human Resources");
+    if (/^7\./.test(controlId)) signals.add("Physical").add("Infrastructure");
+    if (/^8\./.test(controlId)) signals.add("Technology").add("Access Control").add("Monitoring").add("Application Security");
   }
   return [...signals];
 }

@@ -12,14 +12,7 @@
 
 import { useMemo } from "react";
 import { FrameworkEngine } from "../engines/framework-engine/frameworkEngine";
-import { buildRelationshipGraph } from "./buildRelationshipGraph";
-
-// Map of URL slugs → FrameworkEngine constructor IDs.
-const SLUG_TO_FRAMEWORK_ID = {
-  "soc-2": "soc2-type-ii",
-  "soc2": "soc2-type-ii",
-  "soc-2-type-ii": "soc2-type-ii",
-};
+import { resolveFrameworkId } from "../engines/framework-engine/frameworkRegistry";
 
 /**
  * Returns implementation data shaped like the legacy getFrameworkLibrary()
@@ -35,7 +28,7 @@ export function useFrameworkData(slug) {
   return useMemo(() => {
     if (!slug) return emptyLibrary();
 
-    const frameworkId = SLUG_TO_FRAMEWORK_ID[slug];
+    const frameworkId = resolveFrameworkId(slug);
     if (!frameworkId) return emptyLibrary();
 
     let engine;
@@ -45,11 +38,12 @@ export function useFrameworkData(slug) {
       return emptyLibrary();
     }
 
+    const framework = engine.getFramework();
+    const isSoc2 = engine.frameworkId === "soc2-type-ii";
     const rawControls = engine.getControls();
     const rawRisks = engine.getRisks();
     const rawTests = engine.getTests();
     const rawPolicies = engine.getPolicies();
-    const rawEvidence = engine.getEvidence();
     const aiGuidance = engine.getAIGuidance();
     const mappings = engine.getMappings();
 
@@ -83,7 +77,8 @@ export function useFrameworkData(slug) {
         approver: "",
         dueDate: "",
         category: c.category,
-        trustServiceCriteria: c.id, // SOC 2 control IDs ARE the TSC
+        trustServiceCriteria: c.trustServiceCriteria ?? c.trustId ?? (isSoc2 ? c.id : ""),
+        annexDomain: c.annexDomain ?? c.domain ?? c.category ?? "",
         criteria: [c.id],
         priority: c.priority ?? "",
         evidenceType: c.requiredEvidence?.[0] ?? "",
@@ -190,7 +185,7 @@ const POLICY_TITLE_OVERRIDES = {
     // ── Policies ─────────────────────────────────────────────────────────────
     const policies = rawPolicies.map((p) => {
       const linkedControls = p.relatedControls ?? [];
-      const overridenTitle = POLICY_TITLE_OVERRIDES[p.id] || p.title;
+      const overridenTitle = isSoc2 ? POLICY_TITLE_OVERRIDES[p.id] || p.title : p.title;
 
       return {
         id: p.id,
@@ -245,7 +240,7 @@ const POLICY_TITLE_OVERRIDES = {
       activityTimeline: [],
     }));
 
-    return { controls, risks, tests, policies, populations };
+    return { framework, controls, risks, tests, policies, populations };
   }, [slug]);
 }
 

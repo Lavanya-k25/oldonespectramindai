@@ -4,6 +4,7 @@ import {
   X,
   ChevronDown,
   Download,
+  FileText,
   Filter,
   MessageSquare,
   RefreshCw,
@@ -11,6 +12,7 @@ import {
   Send,
   ShieldCheck,
   SlidersHorizontal,
+  UploadCloud,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -18,6 +20,7 @@ import AppShell from "../components/layout/AppShell";
 import { useFrameworkData } from "../core/adapters/useFrameworkData";
 import { useRelationshipGraph, getLinkedItemsFromGraph } from "../core/adapters/useRelationshipGraph";
 import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
+import { DEFAULT_FRAMEWORK_ID, ISO27001_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
 import { frameworks } from "../data/mockData";
 import { CMMCProgressRing } from "../features/cmmc/components";
 import { cmmcDomains } from "../features/cmmc/data";
@@ -33,6 +36,13 @@ const implementationTabs = [
   "Tests",
   "Policies",
   "Populations",
+];
+
+const iso27001ImplementationTabs = [
+  "Risk Scenarios",
+  "Controls",
+  "Tests",
+  "Mandatory Docs",
 ];
 
 const cmmcImplementationTabs = [
@@ -524,17 +534,19 @@ const populationColumns = [
 export default function Implementation() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("Tests");
+  const selectedFramework = getSelectedFramework(location);
+  const selectedFrameworkId = resolveFrameworkId(selectedFramework?.slug) || DEFAULT_FRAMEWORK_ID;
 
   // OrganizationEngine now owns workspace state — routes status changes through
   // trackControlStatus() with full audit history, while keeping the legacy
   // flat-map format that all downstream components already read.
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore();
+  const { workspaceData, saveWorkspaceItem } = useOrganizationStore(selectedFrameworkId);
 
-  const [questionnaireResponses, setQuestionnaireResponses] = useState(() => loadQuestionnaireResponses());
-  const selectedFramework = getSelectedFramework(location);
+  const [questionnaireResponses, setQuestionnaireResponses] = useState(() => loadQuestionnaireResponses(selectedFrameworkId));
   const isCMMC = isCMMCFramework(selectedFramework);
-  const currentTabs = isCMMC ? cmmcImplementationTabs : implementationTabs;
-  const defaultActiveTab = isCMMC ? "Overview" : "Tests";
+  const isISO27001 = selectedFrameworkId === ISO27001_FRAMEWORK_ID;
+  const currentTabs = isCMMC ? cmmcImplementationTabs : isISO27001 ? iso27001ImplementationTabs : implementationTabs;
+  const defaultActiveTab = isCMMC ? "Overview" : isISO27001 ? "Mandatory Docs" : "Tests";
   const visibleActiveTab = currentTabs.includes(activeTab) ? activeTab : defaultActiveTab;
   // FrameworkEngine is now the source of truth — the framework library JSON
   // files are never modified. useFrameworkData returns the same shape that
@@ -610,9 +622,19 @@ export default function Implementation() {
   const [workspaceItem, setWorkspaceItem] = useState(() =>
     getWorkspaceItemFromLocation(window.location, implementationData)
   );
+  const [isWorkspaceClosing, setIsWorkspaceClosing] = useState(false);
   const selectWorkspaceItem = (item, { replace = false } = {}) => {
+    setIsWorkspaceClosing(false);
     setWorkspaceItem(item);
     updateWorkspaceHistory(item, replace);
+  };
+  const closeWorkspaceItem = () => {
+    setIsWorkspaceClosing(true);
+    updateWorkspaceHistory(null);
+    window.setTimeout(() => {
+      setWorkspaceItem(null);
+      setIsWorkspaceClosing(false);
+    }, 200);
   };
 
   useEffect(() => {
@@ -632,7 +654,7 @@ export default function Implementation() {
   }, [implementationData]);
 
   useEffect(() => {
-    const refreshQuestionnaireResponses = () => setQuestionnaireResponses(loadQuestionnaireResponses());
+    const refreshQuestionnaireResponses = () => setQuestionnaireResponses(loadQuestionnaireResponses(selectedFrameworkId));
     window.addEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
     window.addEventListener("storage", refreshQuestionnaireResponses);
 
@@ -640,7 +662,7 @@ export default function Implementation() {
       window.removeEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
       window.removeEventListener("storage", refreshQuestionnaireResponses);
     };
-  }, []);
+  }, [selectedFrameworkId]);
 
   if (!selectedFramework) {
     return <SelectFrameworkScreen />;
@@ -669,13 +691,9 @@ export default function Implementation() {
           </div>
         </div>
 
-        <section
-          className={`grid gap-4 xl:items-start ${
-            shouldShowWorkspace ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "xl:grid-cols-1"
-          }`}
-        >
+        <section className="grid gap-4 xl:grid-cols-1 xl:items-start">
           <div className="min-w-0 space-y-3">
-            {!isCMMC && <OverviewRings data={implementationData} workspaceData={workspaceData} />}
+            {!isCMMC && <OverviewRings data={implementationData} workspaceData={workspaceData} selectedFramework={selectedFramework} />}
             <ImplementationTabs tabs={currentTabs} activeTab={visibleActiveTab} onTabChange={setActiveTab} />
 
             <TabPanel
@@ -689,24 +707,27 @@ export default function Implementation() {
           </div>
 
           {shouldShowWorkspace && (
-            <ImplementationWorkspace
-              key={workspaceItem.id}
-              item={workspaceItem}
-              framework={selectedFramework}
-              data={implementationData}
-              savedState={workspaceData && workspaceData[workspaceItem.id]}
-              relationshipGraph={relationshipGraph}
-              onWorkspaceStateChange={(itemId, nextState) => {
-                // Route through OrganizationEngine for proper audit tracking,
-                // then the hook syncs both the engine snapshot and the legacy
-                // flat-map so all downstream reads continue to work.
-                saveWorkspaceItem(itemId, nextState);
-              }}
-              onClose={() => {
-                setWorkspaceItem(null);
-                updateWorkspaceHistory(null);
-              }}
-            />
+            <div
+              className={`fixed inset-y-0 right-0 z-50 w-full max-w-[430px] transform border-l border-slate-200 bg-white shadow-xl shadow-slate-900/10 transition-transform duration-200 ease-out ${
+                isWorkspaceClosing ? "translate-x-full" : "translate-x-0"
+              }`}
+            >
+              <ImplementationWorkspace
+                key={workspaceItem.id}
+                item={workspaceItem}
+                framework={selectedFramework}
+                data={implementationData}
+                savedState={workspaceData && workspaceData[workspaceItem.id]}
+                relationshipGraph={relationshipGraph}
+                onWorkspaceStateChange={(itemId, nextState) => {
+                  // Route through OrganizationEngine for proper audit tracking,
+                  // then the hook syncs both the engine snapshot and the legacy
+                  // flat-map so all downstream reads continue to work.
+                  saveWorkspaceItem(itemId, nextState);
+                }}
+                onClose={closeWorkspaceItem}
+              />
+            </div>
           )}
         </section>
       </div>
@@ -761,7 +782,8 @@ function SelectFrameworkScreen() {
   );
 }
 
-function OverviewRings({ data, workspaceData }) {
+function OverviewRings({ data, workspaceData, selectedFramework }) {
+  const isISO27001 = selectedFramework?.slug === "iso-27001";
   const riskProgress = progressFromRows(data.risks, (row) => isCompletedStatus(row, workspaceData));
   const controlProgress = progressFromRows(data.controls, (row) => isCompletedStatus(row, workspaceData));
   const testProgress = progressFromRows(data.tests, (row) => isCompletedStatus(row, workspaceData));
@@ -774,7 +796,32 @@ function OverviewRings({ data, workspaceData }) {
     (controlProgress + testProgress + evidenceProgress + policyProgress) / 4
   );
 
-  const rings = [
+  const rings = isISO27001 ? [
+    {
+      label: "Risk Scenarios",
+      value: riskProgress,
+      caption: `${completedCount(data.risks, (row) => isCompletedStatus(row, workspaceData))}/${data.risks.length} completed`,
+      tone: "#60a5fa",
+    },
+    {
+      label: "Tests",
+      value: testProgress,
+      caption: `${completedCount(data.tests, (row) => isCompletedStatus(row, workspaceData))}/${data.tests.length} completed`,
+      tone: "#22d3ee",
+    },
+    {
+      label: "Controls",
+      value: controlProgress,
+      caption: `${completedCount(data.controls, (row) => isCompletedStatus(row, workspaceData))}/${data.controls.length} completed`,
+      tone: "#3b82f6",
+    },
+    {
+      label: "Audit",
+      value: auditReadiness,
+      caption: "Controls, tests, evidence",
+      tone: "#facc15",
+    },
+  ] : [
     {
       label: "Risk Progress",
       value: riskProgress,
@@ -819,7 +866,7 @@ function OverviewRings({ data, workspaceData }) {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className={`grid gap-4 sm:grid-cols-2 ${isISO27001 ? "xl:grid-cols-4" : "xl:grid-cols-5"}`}>
         {rings.map((ring) => (
           <div
             key={ring.label}
@@ -930,6 +977,12 @@ function TabPanel({ activeTab, selectedFramework, data, questionnaireResponses, 
   if (activeTab === "Tests") {
     return (
       <TestsSection rows={data.tests} questionnaireResponses={questionnaireResponses} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
+    );
+  }
+
+  if (activeTab === "Mandatory Docs") {
+    return (
+      <MandatoryDocsSection rows={data.policies} workspaceData={workspaceData} selectedFramework={selectedFramework} onSelectWorkspaceItem={onSelectWorkspaceItem} />
     );
   }
 
@@ -5034,6 +5087,49 @@ function PoliciesSection({ rows, questionnaireResponses, workspaceData, selected
   );
 }
 
+function MandatoryDocsSection({ rows, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="divide-y divide-slate-100">
+        {rows.map((document) => {
+          const status = getMandatoryDocStatus(document, workspaceData);
+          const isReady = status === "READY";
+
+          return (
+            <button
+              key={document.id}
+              type="button"
+              onClick={() => onSelectWorkspaceItem(createWorkspaceItem("Policy", document))}
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-6 py-4 text-left transition hover:bg-blue-50/40 focus:bg-blue-50/60 focus:outline-none"
+            >
+              <span className="min-w-0 text-sm font-black text-slate-700">
+                {document.title}
+              </span>
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide ${
+                isReady ? "text-blue-700" : "text-rose-600"
+              }`}>
+                <span className={`grid h-3.5 w-3.5 place-items-center rounded-full border text-[9px] leading-none ${
+                  isReady ? "border-blue-500 text-blue-700" : "border-rose-500 text-rose-600"
+                }`}>
+                  {isReady ? "OK" : "!"}
+                </span>
+                {status}
+              </span>
+              <ArrowRight size={15} className="text-slate-300" aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+
+      {!rows.length && (
+        <div className="px-6 py-10 text-center text-sm font-semibold text-slate-400">
+          No mandatory documents found for {selectedFramework.name}.
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PopulationSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
   const [query, setQuery] = useState("");
   const [filterBy, setFilterBy] = useState("All");
@@ -5173,6 +5269,7 @@ function PopulationSection({ rows, questionnaireResponses, workspaceData, select
 function ImplementationWorkspace({ item, framework, data, savedState = {}, onWorkspaceStateChange, onClose, relationshipGraph }) {
   const state = savedState || {};
   const linkedItems = getLinkedItemsFromGraph(item, data, relationshipGraph);
+  const frameworkBadge = framework?.shortName || framework?.name || "Framework";
   const [organizationStatus, setOrganizationStatus] = useState(state.status || "");
   const [dueDate, setDueDate] = useState(state.dueDate || "");
   const [assignments, setAssignments] = useState({
@@ -5325,7 +5422,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
     const isNotApplicable = organizationStatus === "Not Applicable" || organizationStatus === "not_applicable";
 
     return (
-      <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-sm space-y-6 w-full xl:w-[420px]">
+      <aside className="h-full min-w-0 overflow-y-auto bg-white p-5 space-y-6 w-full">
         {/* Drawer Header */}
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div className="space-y-2">
@@ -5334,7 +5431,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                 {isNotApplicable ? "NOT APPLICABLE" : "READY"}
               </span>
               <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500 uppercase tracking-wide">
-                SOC 2
+                {frameworkBadge}
               </span>
             </div>
             <h2 className="text-xl font-black text-slate-950">
@@ -5499,7 +5596,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
     const isImplemented = organizationStatus === "complete" || organizationStatus === "Implemented";
 
     return (
-      <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-sm space-y-6 w-full xl:w-[420px]">
+      <aside className="h-full min-w-0 overflow-y-auto bg-white p-5 space-y-6 w-full">
         {/* Drawer Header */}
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div className="space-y-2">
@@ -5508,7 +5605,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                 {isImplemented ? "IMPLEMENTED" : "IN PROGRESS"}
               </span>
               <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500 uppercase tracking-wide">
-                SOC 2
+                {frameworkBadge}
               </span>
             </div>
             <h2 className="text-xl font-black text-slate-950">
@@ -5656,7 +5753,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
     const residualRiskScore = residualLikelihood * residualImpact;
 
     return (
-      <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-sm space-y-6 w-full xl:w-[420px]">
+      <aside className="h-full min-w-0 overflow-y-auto bg-white p-5 space-y-6 w-full">
         {/* Drawer Header */}
         <div className="flex items-start justify-between border-b border-slate-105 pb-4">
           <div className="space-y-1">
@@ -5670,7 +5767,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                 {isNotApplicable ? "NOT APPLICABLE" : "READY"}
               </span>
               <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500 uppercase tracking-wide">
-                SOC 2
+                {frameworkBadge}
               </span>
             </div>
             <h2 className="text-xl font-black text-slate-950 mt-1">
@@ -5942,8 +6039,142 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
     );
   }
 
+  if (item.type === "Policy") {
+    const isReady = ["ready", "approved", "implemented", "complete", "completed"].includes(
+      String(organizationStatus).toLowerCase()
+    );
+    const uploadUrl = `/implementation/mandatory-documents/${encodeURIComponent(item.id)}/upload?framework=${framework?.slug || "iso-27001"}`;
+
+    return (
+      <aside className="h-full min-w-0 overflow-y-auto bg-white p-5 space-y-6 w-full">
+        <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <span className={`inline-flex rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${
+                isReady ? "bg-blue-50 text-blue-700" : "bg-rose-50 text-rose-700"
+              }`}>
+                {isReady ? "READY" : "NOT READY"}
+              </span>
+              <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                {frameworkBadge}
+              </span>
+            </div>
+            <h2 className="text-xl font-black text-slate-950">
+              {item.title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-50 hover:text-slate-750"
+            aria-label="Close details panel"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4">
+          <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-700">Mandatory Document</h4>
+          <p className="mt-2 text-sm leading-6 text-slate-700">
+            {item.description || `Upload and maintain the ${item.title} document for the selected framework.`}
+          </p>
+        </div>
+
+        <Link
+          to={uploadUrl}
+          state={{ document: item, framework }}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800"
+        >
+          <UploadCloud size={17} />
+          Upload Document
+        </Link>
+
+        <div className="grid gap-3 border-b border-slate-100 pb-5 text-sm">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Details</h4>
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-500">Assigned to</span>
+            <select
+              value={assignments.owner}
+              onChange={(e) => updateAssignment("owner", e.target.value)}
+              className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer"
+            >
+              {employeesList.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-500">Due Date</span>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => updateDueDate(e.target.value)}
+              className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-700 outline-none"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-500">Category</span>
+            <span className="font-bold text-slate-800">{item.category || "Mandatory Docs"}</span>
+          </div>
+        </div>
+
+        <div className="space-y-3 border-b border-slate-100 pb-5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Uploaded Documents</h4>
+            <button
+              type="button"
+              onClick={() => updateOrganizationStatus("Ready")}
+              className="rounded border border-slate-200 px-2 py-1 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+            >
+              Mark Ready
+            </button>
+          </div>
+          {evidenceFiles.length ? (
+            <div className="space-y-2">
+              {evidenceFiles.map((file) => (
+                <div key={file.id || file.name} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <FileText size={16} className="text-blue-600" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-slate-900">{file.name}</p>
+                    <p className="text-xs font-semibold text-slate-400">{file.uploadedAt || "Uploaded"}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-slate-200 px-4 py-5 text-center text-xs font-semibold text-slate-400">
+              No documents uploaded yet.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-3 border-b border-slate-100 pb-5">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Mapped Controls</h4>
+          {linkedItems.controls?.length ? (
+            linkedItems.controls.map((ctrl) => (
+              <div key={ctrl.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-sm font-black text-slate-900">{ctrl.title}</p>
+                <p className="mt-1 text-xs font-bold text-slate-400">{ctrl.id}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs font-semibold text-slate-400 italic">No mapped controls.</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">History</h4>
+          {comments.map((comment, index) => renderComment(comment, index))}
+          {!comments.length && (
+            <p className="py-6 text-center text-xs font-semibold text-slate-400">There are no comments yet</p>
+          )}
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-sm">
+    <aside className="h-full min-w-0 overflow-y-auto bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -6051,6 +6282,12 @@ function renderStatusPill(row, defaultApplicability, workspaceData) {
     return <RiskPill tone="Medium">Not Applicable</RiskPill>;
   }
   return <RiskPill>Applicable</RiskPill>;
+}
+
+function getMandatoryDocStatus(document, workspaceData) {
+  const status = String((workspaceData && workspaceData[document.id]?.status) || "").toLowerCase();
+  if (["ready", "approved", "implemented", "complete", "completed"].includes(status)) return "READY";
+  return "NOT READY";
 }
 
 function isCompletedStatus(row, workspaceData) {

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "spectramind:onboarding-questionnaire";
+const DEFAULT_FRAMEWORK_ID = "soc2-type-ii";
 
 export const questionnaireSections = [
   {
@@ -88,19 +89,19 @@ function mcq(key, label, options, signals) {
   return { key, label, type: "mcq", options, signals };
 }
 
-export function loadQuestionnaireResponses() {
+export function loadQuestionnaireResponses(frameworkId = DEFAULT_FRAMEWORK_ID) {
   if (typeof window === "undefined") return {};
 
   try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}");
+    return JSON.parse(window.localStorage.getItem(getQuestionnaireStorageKey(frameworkId)) || "{}");
   } catch {
     return {};
   }
 }
 
-export function saveQuestionnaireResponses(responses) {
+export function saveQuestionnaireResponses(responses, frameworkId = DEFAULT_FRAMEWORK_ID) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(responses));
+  window.localStorage.setItem(getQuestionnaireStorageKey(frameworkId), JSON.stringify(responses));
   window.dispatchEvent(new Event("spectramind:questionnaire-updated"));
 }
 
@@ -183,4 +184,8 @@ function itemSearchText(item) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function getQuestionnaireStorageKey(frameworkId = DEFAULT_FRAMEWORK_ID) {
+  return frameworkId === DEFAULT_FRAMEWORK_ID ? STORAGE_KEY : `${STORAGE_KEY}:${frameworkId}`;
 }

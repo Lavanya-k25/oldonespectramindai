@@ -12,13 +12,8 @@
 
 import { useMemo } from "react";
 import { FrameworkEngine } from "../engines/framework-engine/frameworkEngine";
+import { resolveFrameworkId } from "../engines/framework-engine/frameworkRegistry";
 import { RelationshipEngineService } from "../../relationship-engine/services/RelationshipEngineService";
-
-const SLUG_TO_FRAMEWORK_ID = {
-  "soc-2": "soc2-type-ii",
-  "soc2": "soc2-type-ii",
-  "soc-2-type-ii": "soc2-type-ii",
-};
 
 /**
  * Returns a seeded RelationshipEngineService populated from the framework
@@ -29,7 +24,7 @@ const SLUG_TO_FRAMEWORK_ID = {
  */
 export function useRelationshipGraph(slug) {
   return useMemo(() => {
-    const frameworkId = SLUG_TO_FRAMEWORK_ID[slug];
+    const frameworkId = resolveFrameworkId(slug);
     if (!frameworkId) return null;
 
     let engine;
