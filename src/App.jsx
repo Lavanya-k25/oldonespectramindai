@@ -39,6 +39,7 @@ import Testimonials from "./pages/Testimonials";
 import SOC2Solution from "./pages/SOC2Solution";
 import ISO27001Solution from "./pages/ISO27001Solution";
 import CMMCSolution from "./pages/CMMCSolution";
+import { cmmcWorkspaceRoutes } from "./features/cmmc/routes";
 
 function App() {
   return (
@@ -109,6 +110,10 @@ function App() {
   path="/solutions/cmmc"
   element={<CMMCSolution />}
 />
+
+{cmmcWorkspaceRoutes.map(({ path, Component }) => (
+  <Route key={path} path={path} element={<Component />} />
+))}
 
     <Route path="/policies" element={<Policies />} />
 
