@@ -15,6 +15,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { APP_NAME, useOrganizationLogo } from "../../core/adapters/useOrganizationBranding";
 
 const dashboardItem = { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard };
 
@@ -39,6 +40,7 @@ const workspaceItems = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const organizationLogo = useOrganizationLogo();
 
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-white/70 bg-[#fffdf8]/78 px-4 py-5 text-slate-900 shadow-2xl shadow-slate-900/5 backdrop-blur-2xl lg:block">
@@ -46,15 +48,23 @@ export default function Sidebar() {
         to="/dashboard"
         className="flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/60"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-blue-600/30 bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-600/20">
-          R
+        <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-blue-600/30 bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-600/20">
+          {organizationLogo ? (
+            <img
+              src={organizationLogo}
+              alt="Organization logo"
+              className="h-full w-full bg-white object-contain p-1"
+            />
+          ) : (
+            "S"
+          )}
         </span>
         <div>
           <p className="text-xl font-black leading-tight text-slate-950">
-            Rette
+            {APP_NAME}
           </p>
           <p className="text-[10px] font-bold text-slate-400">
-            Powered by COOP
+            Compliance workspace
           </p>
         </div>
       </Link>

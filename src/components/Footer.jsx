@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { APP_NAME } from "../core/adapters/useOrganizationBranding";
 
 export default function Footer() {
   return (
@@ -7,7 +8,7 @@ export default function Footer() {
         <div className="grid gap-10 md:grid-cols-4">
           <div>
             <h2 className="text-3xl font-black">
-              SpectraMind
+              {APP_NAME}
             </h2>
             <p className="mt-4 max-w-sm leading-relaxed text-slate-600">
               A unified platform for compliance management, evidence
@@ -37,7 +38,7 @@ export default function Footer() {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-7 md:flex-row md:items-center">
           <p className="text-sm text-slate-500">
-            &copy; 2026 SpectraMind. All rights reserved.
+            &copy; 2026 {APP_NAME}. All rights reserved.
           </p>
           <p className="text-sm text-slate-500">
             Built for modern compliance teams.

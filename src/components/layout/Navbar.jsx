@@ -166,7 +166,7 @@ export default function Navbar() {
           <span className="text-lg font-black tracking-normal">
             Spectra
             <span className="bg-[linear-gradient(135deg,#8f5f24_0%,#b98232_30%,#d3a853_56%,#a76e29_82%,#6f491f_100%)] bg-clip-text text-transparent">
-              Minds
+              Mind
             </span>
             .ai
           </span>

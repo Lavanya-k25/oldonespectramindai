@@ -1038,7 +1038,7 @@ function CMMCImplementationPanel({ activeTab }) {
     return <CMMCExportCenterPanel />;
   }
 
-  return <CMMCImplementationPlaceholder title={activeTab} />;
+  return null;
 }
 
 function CMMCImplementationOverview() {
@@ -1243,14 +1243,6 @@ function CMMCDomainDetails({ domain }) {
         className="mt-5"
       />
 
-      <div className="mt-5 rounded-lg border border-blue-600/20 bg-blue-50 px-4 py-3">
-        <p className="text-sm font-black text-blue-800">
-          Coming in next step
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">
-          Domain controls, assessment objectives, mapped evidence, and policy relationships will be added here.
-        </p>
-      </div>
     </section>
   );
 }
@@ -1646,14 +1638,6 @@ function CMMCControlDetails({ control }) {
         className="mt-5"
       />
 
-      <div className="mt-5 rounded-lg border border-blue-600/20 bg-blue-50 px-4 py-3">
-        <p className="text-sm font-black text-blue-800">
-          Next step
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">
-          Assessment Objectives and Evidence will be implemented next for this control.
-        </p>
-      </div>
     </section>
   );
 }
@@ -1961,14 +1945,6 @@ function CMMCAssessmentObjectiveDetails({ objective }) {
         className="mt-5"
       />
 
-      <div className="mt-5 rounded-lg border border-blue-600/20 bg-blue-50 px-4 py-3">
-        <p className="text-sm font-black text-blue-800">
-          Next Step
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">
-          Evidence mapping will be implemented next.
-        </p>
-      </div>
     </section>
   );
 }
@@ -2303,14 +2279,6 @@ function CMMCEvidenceDetails({ evidence }) {
         </p>
       </div>
 
-      <div className="mt-5 rounded-lg border border-blue-600/20 bg-blue-50 px-4 py-3">
-        <p className="text-sm font-black text-blue-800">
-          Next Step
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">
-          Policy mapping will be implemented next.
-        </p>
-      </div>
     </section>
   );
 }
@@ -4355,19 +4323,6 @@ function getCMMCSSPComplianceSummary(controls) {
     policies,
     readiness,
   };
-}
-
-function CMMCImplementationPlaceholder({ title }) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-black text-slate-900">
-        {title}
-      </h2>
-      <p className="mt-2 text-sm font-semibold text-slate-500">
-        This section will be implemented next.
-      </p>
-    </section>
-  );
 }
 
 function RiskScenariosSection({ rows, questionnaireResponses, workspaceData, selectedFramework, onSelectWorkspaceItem }) {
