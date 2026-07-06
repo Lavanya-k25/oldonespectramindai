@@ -1,5 +1,5 @@
-import AppShell from "../../../components/layout/AppShell";
 import CMMCHeader from "./CMMCHeader";
+import CMMCImplementationLayout from "./CMMCImplementationLayout";
 
 export default function CMMCPageLayout({
   eyebrow,
@@ -9,7 +9,7 @@ export default function CMMCPageLayout({
   children,
 }) {
   return (
-    <AppShell>
+    <CMMCImplementationLayout>
       <div className="space-y-6">
         <CMMCHeader
           eyebrow={eyebrow}
@@ -19,6 +19,6 @@ export default function CMMCPageLayout({
         />
         {children}
       </div>
-    </AppShell>
+    </CMMCImplementationLayout>
   );
 }

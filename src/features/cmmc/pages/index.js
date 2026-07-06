@@ -16,5 +16,6 @@ export { default as CMMCProgressTrackingPage } from "./CMMCProgressTrackingPage"
 export { default as CMMCReadinessScorePage } from "./CMMCReadinessScorePage";
 export { default as CMMCReviewStatusPage } from "./CMMCReviewStatusPage";
 export { default as CMMCRiskTrackingPage } from "./CMMCRiskTrackingPage";
+export { default as CMMCScopePage } from "./CMMCScopePage";
 export { default as CMMCSPRSScorePage } from "./CMMCSPRSScorePage";
 export { default as CMMCSSPPage } from "./CMMCSSPPage";

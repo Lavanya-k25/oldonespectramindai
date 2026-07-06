@@ -1,3 +1,14 @@
+import { getOrganizationScopedStorageKey } from "../auth/session";
+import {
+  QUESTIONNAIRE_STATUSES,
+  assessFrameworkQuestionnaire,
+  assessQuestionnaireItem,
+  getQuestionnaireNotApplicableSignals,
+  getQuestionnaireSignals,
+  hasQuestionnaireAnswers,
+  isApplicableAssessment,
+} from "../questionnaire/QuestionnaireEngine";
+
 const STORAGE_KEY = "spectramind:onboarding-questionnaire";
 const DEFAULT_FRAMEWORK_ID = "soc2-type-ii";
 
@@ -105,65 +116,14 @@ export function saveQuestionnaireResponses(responses, frameworkId = DEFAULT_FRAM
   window.dispatchEvent(new Event("spectramind:questionnaire-updated"));
 }
 
-export function hasQuestionnaireAnswers(responses) {
-  return Object.values(responses || {}).some(Boolean);
-}
+export { QUESTIONNAIRE_STATUSES, assessFrameworkQuestionnaire, getQuestionnaireNotApplicableSignals, getQuestionnaireSignals, hasQuestionnaireAnswers };
 
-export function getQuestionnaireSignals(responses) {
-  const signals = [];
-  const add = (...items) => signals.push(...items);
-  const answered = (key) => Boolean(responses?.[key]);
-  const positive = (key) => !["No", "None", "Never"].includes(responses?.[key]);
-
-  if (answered("companyStage") || answered("soc2Scope")) add("Governance");
-  if (positive("employeeCount")) add("Workforce", "Human Resources");
-  if (positive("identityProvider") || answered("mfaEnabled") || answered("accessReviews") || answered("offboarding")) add("Identity", "Access Control");
-  if (responses.usesCloud === "Yes" || positive("cloudProvider")) add("Infrastructure", "Cloud", "System Operations");
-  if (responses.hasServers === "Yes" || answered("vulnerabilityScanning")) add("Infrastructure", "Endpoint", "Patch", "Vulnerability");
-  if (positive("sourceControl") || answered("changeApprovals") || answered("dependencyScanning")) add("Application Security", "Change Management", "Secure Development");
-  if (answered("monitoringTools")) add("Monitoring", "Logging", "System Operations");
-  if (answered("hasIncidentPlan") || answered("tabletopExercises")) add("Incident Response");
-  if (responses.hasBackups === "Yes" || answered("restoreTests") || responses.availabilityCommitment === "Yes") add("Backup", "Business Continuity", "Availability");
-  if (responses.usesVendors === "Yes" || answered("vendorReviews")) add("Vendor", "Vendor Management");
-  if (responses.storesSensitiveData === "Yes" || answered("encryptionEnabled") || responses.retentionRequirements === "Yes") add("Data Protection", "Confidentiality", "Privacy", "Encryption", "Retention");
-  if (answered("securityTraining") || answered("remoteWork")) add("Training", "Remote Work", "Workforce");
-
-  return [...new Set(signals)];
-}
-
-export function getQuestionnaireNotApplicableSignals(responses) {
-  const signals = [];
-  const add = (...items) => signals.push(...items);
-
-  if (responses.usesCloud === "No" && responses.hasServers === "No") add("Cloud", "Infrastructure", "Patch", "Vulnerability", "Endpoint");
-  if (responses.cloudProvider === "None") add("Cloud");
-  if (responses.sourceControl === "None") add("Application Security", "Change Management", "Secure Development");
-  if (responses.hasBackups === "No" && responses.availabilityCommitment === "No") add("Backup", "Business Continuity", "Availability");
-  if (responses.usesVendors === "No") add("Vendor", "Vendor Management");
-  if (responses.storesSensitiveData === "No") add("Data Protection", "Confidentiality", "Privacy", "Encryption", "Retention");
-  if (responses.remoteWork === "No") add("Remote Work");
-  if (responses.employeeCount === "No employees yet") add("Workforce", "Training", "Human Resources", "Remote Work");
-
-  return [...new Set(signals)];
-}
-
-export function getQuestionnaireApplicability(item, responses) {
-  if (!hasQuestionnaireAnswers(responses)) return "Library";
-
-  const text = itemSearchText(item);
-  const applicableSignals = getQuestionnaireSignals(responses);
-  const notApplicableSignals = getQuestionnaireNotApplicableSignals(responses);
-  const alwaysApplicableSignals = ["Governance", "Control Environment", "Risk Assessment", "Monitoring Activities", "Control Activities"];
-
-  if (alwaysApplicableSignals.some((signal) => text.includes(signal.toLowerCase()))) return "Applicable";
-  if (notApplicableSignals.some((signal) => text.includes(signal.toLowerCase()))) return "Not applicable";
-  if (applicableSignals.some((signal) => text.includes(signal.toLowerCase()))) return "Applicable";
-
-  return "Not applicable";
+export function getQuestionnaireApplicability(item, responses, workspaceState = {}, itemType = "Implementation", frameworkId) {
+  return assessQuestionnaireItem(item, responses, workspaceState, itemType, frameworkId).status;
 }
 
 export function isRelevantToQuestionnaire(item, responses) {
-  return getQuestionnaireApplicability(item, responses) === "Applicable";
+  return isApplicableAssessment(assessQuestionnaireItem(item, responses));
 }
 
 export function getImplementationRecommendation(item, responses) {
@@ -172,20 +132,7 @@ export function getImplementationRecommendation(item, responses) {
   return "Applicable based on onboarding questionnaire responses.";
 }
 
-function itemSearchText(item) {
-  return [
-    item.category,
-    item.title,
-    item.description,
-    item.evidenceType,
-    item.trustServiceCriteria,
-    item.criteria?.join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
 function getQuestionnaireStorageKey(frameworkId = DEFAULT_FRAMEWORK_ID) {
-  return frameworkId === DEFAULT_FRAMEWORK_ID ? STORAGE_KEY : `${STORAGE_KEY}:${frameworkId}`;
+  const baseKey = frameworkId === DEFAULT_FRAMEWORK_ID ? STORAGE_KEY : `${STORAGE_KEY}:${frameworkId}`;
+  return getOrganizationScopedStorageKey(baseKey);
 }

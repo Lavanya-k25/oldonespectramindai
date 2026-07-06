@@ -8,16 +8,9 @@ import {
   YAxis,
 } from "recharts";
 
-const data = [
-  { month: "Jan", score: 45 },
-  { month: "Feb", score: 55 },
-  { month: "Mar", score: 60 },
-  { month: "Apr", score: 70 },
-  { month: "May", score: 80 },
-  { month: "Jun", score: 85 },
-];
+export default function ComplianceChart({ data = [], delta = 0 }) {
+  const chartData = data.length ? data : [{ label: "Current", score: 0 }];
 
-export default function ComplianceChart() {
   return (
     <div className="rounded-lg border border-white/75 bg-white/62 p-6 shadow-xl shadow-slate-900/5 backdrop-blur">
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -30,15 +23,15 @@ export default function ComplianceChart() {
           </p>
         </div>
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">
-          +40 pts
+          {delta >= 0 ? "+" : ""}{delta} pts
         </span>
       </div>
 
       <div className="h-80 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(92,80,62,.16)" />
-            <XAxis dataKey="month" stroke="#746b5d" />
+            <XAxis dataKey="label" stroke="#746b5d" />
             <YAxis stroke="#746b5d" />
             <Tooltip />
             <Line

@@ -1,6 +1,9 @@
+import { useUser } from "../auth/UserContext";
 import AppShell from "../components/layout/AppShell";
 
 export default function ProfileSettings() {
+  const { user } = useUser();
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -18,8 +21,8 @@ export default function ProfileSettings() {
 
         <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="grid gap-5">
-            <Field label="Full Name" defaultValue="Admin" />
-            <Field label="Email" defaultValue="admin@spectramind.ai" />
+            <Field label="Full Name" defaultValue={user?.name || ""} />
+            <Field label="Email" defaultValue={user?.email || ""} />
             <Field label="Password" defaultValue="password" type="password" />
           </div>
 

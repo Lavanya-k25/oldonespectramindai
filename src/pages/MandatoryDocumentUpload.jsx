@@ -2,21 +2,30 @@ import { ArrowLeft, FileText, UploadCloud } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import AppShell from "../components/layout/AppShell";
-import { useFrameworkData } from "../core/adapters/useFrameworkData";
-import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
-import { DEFAULT_FRAMEWORK_ID, getFrameworkLibrary, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import { getFrameworkLibrary, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 export default function MandatoryDocumentUpload() {
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  return <MandatoryDocumentUploadContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function MandatoryDocumentUploadContent({ activeFramework }) {
   const { documentId = "" } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const searchParams = new URLSearchParams(location.search);
-  const frameworkSlug = searchParams.get("framework") || "iso-27001";
-  const frameworkId = resolveFrameworkId(frameworkSlug) || DEFAULT_FRAMEWORK_ID;
+  const frameworkSlug = activeFramework.slug;
+  const frameworkId = resolveFrameworkId(activeFramework.id) || activeFramework.id;
   const framework = getFrameworkLibrary(frameworkId)?.framework;
   const frameworkName = framework?.name || "Framework";
-  const data = useFrameworkData(frameworkSlug);
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore(frameworkId);
+  const { frameworkData: data, workspaceData, actions } = useComplianceState();
   const decodedDocumentId = decodeURIComponent(documentId);
   const document = useMemo(
     () =>
@@ -63,7 +72,7 @@ export default function MandatoryDocumentUpload() {
         ]
       : savedState.comments || [];
 
-    saveWorkspaceItem(document.id, {
+    actions.saveComplianceItem(document.id, {
       ...savedState,
       status: "Ready",
       evidenceFiles: [...existingFiles, ...pendingFiles],

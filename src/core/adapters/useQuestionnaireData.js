@@ -9,6 +9,7 @@
  */
 
 import { useMemo } from "react";
+import { questionnaireSections as genericQuestionnaireSections } from "../../data/questionnaireEngine";
 import { FrameworkEngine } from "../engines/framework-engine/frameworkEngine";
 import { DEFAULT_FRAMEWORK_ID, resolveFrameworkId } from "../engines/framework-engine/frameworkRegistry";
 
@@ -23,45 +24,17 @@ export function useQuestionnaireSections(frameworkId = DEFAULT_FRAMEWORK_ID) {
   return useMemo(() => {
     let engine;
     try {
-      engine = new FrameworkEngine(resolveFrameworkId(frameworkId) || DEFAULT_FRAMEWORK_ID);
+      const resolvedFrameworkId = resolveFrameworkId(frameworkId);
+      if (!resolvedFrameworkId) return normalizeSections(genericQuestionnaireSections);
+      engine = new FrameworkEngine(resolvedFrameworkId);
     } catch {
-      return [];
+      return normalizeSections(genericQuestionnaireSections);
     }
 
     const rawSections = engine.getQuestionnaire();
     if (!rawSections?.length) return [];
 
-    return rawSections.map((section) => ({
-      id: section.id,
-      title: section.title,
-      questions: (section.questions ?? []).map((q) => ({
-        key: q.id,
-        label: q.question,
-        type: normalizeType(q.type),
-        options: q.options ?? [],
-        required: q.required ?? true,
-        description: q.description ?? "",
-        helpText: q.helpText ?? "",
-        placeholder: q.placeholder ?? "",
-        uploadEnabled: Boolean(q.uploadEnabled),
-        fields: q.fields ?? [],
-        systems: q.systems ?? [],
-        subQuestions: (q.subQuestions ?? []).map((subQuestion) => ({
-          key: subQuestion.id,
-          label: subQuestion.question,
-          type: normalizeType(subQuestion.type),
-          options: subQuestion.options ?? [],
-          required: subQuestion.required ?? false,
-          description: subQuestion.description ?? "",
-          helpText: subQuestion.helpText ?? "",
-          placeholder: subQuestion.placeholder ?? "",
-          uploadEnabled: Boolean(subQuestion.uploadEnabled),
-          fields: subQuestion.fields ?? [],
-        })),
-        signals: deriveSignals(q),
-        relatedControls: q.relatedControls ?? [],
-      })),
-    }));
+    return normalizeSections(rawSections);
   }, [frameworkId]);
 }
 
@@ -71,6 +44,7 @@ export function useQuestionnaireSections(frameworkId = DEFAULT_FRAMEWORK_ID) {
  * Normalises question type strings from the JSON schema to rendering branches.
  */
 function normalizeType(type) {
+  if (type === "mcq") return "radio";
   if (type === "single_select" || type === "boolean") return "radio";
   if (type === "multi_select") return "checkbox";
   if (type === "long_text") return "textarea";
@@ -78,6 +52,40 @@ function normalizeType(type) {
   if (type === "system_table" || type === "table") return "system_table";
   if (type === "text") return "text";
   return "textarea";
+}
+
+function normalizeSections(rawSections) {
+  return (rawSections ?? []).map((section) => ({
+    id: section.id,
+    title: section.title,
+    questions: (section.questions ?? []).map((q) => ({
+      key: q.id || q.key,
+      label: q.question || q.label,
+      type: normalizeType(q.type),
+      options: q.options ?? [],
+      required: q.required ?? true,
+      description: q.description ?? "",
+      helpText: q.helpText ?? "",
+      placeholder: q.placeholder ?? "",
+      uploadEnabled: Boolean(q.uploadEnabled),
+      fields: q.fields ?? [],
+      systems: q.systems ?? [],
+      subQuestions: (q.subQuestions ?? []).map((subQuestion) => ({
+        key: subQuestion.id || subQuestion.key,
+        label: subQuestion.question || subQuestion.label,
+        type: normalizeType(subQuestion.type),
+        options: subQuestion.options ?? [],
+        required: subQuestion.required ?? false,
+        description: subQuestion.description ?? "",
+        helpText: subQuestion.helpText ?? "",
+        placeholder: subQuestion.placeholder ?? "",
+        uploadEnabled: Boolean(subQuestion.uploadEnabled),
+        fields: subQuestion.fields ?? [],
+      })),
+      signals: q.signals ?? deriveSignals(q),
+      relatedControls: q.relatedControls ?? [],
+    })),
+  }));
 }
 
 /**

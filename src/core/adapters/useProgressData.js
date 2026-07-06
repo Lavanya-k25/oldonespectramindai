@@ -32,12 +32,12 @@ const EVIDENCE_COMPLETED_STATUSES = new Set([
  *   isReady: boolean
  * }}
  */
-export function useProgressData(frameworkSlug = "soc-2") {
+export function useProgressData(frameworkSlug) {
   const frameworkData = useFrameworkData(frameworkSlug);
 
   return useMemo(() => {
     const engine = new ProgressEngineService();
-    const workspaceData = loadOrganizationWorkspace();
+    const workspaceData = loadOrganizationWorkspace(frameworkSlug);
 
     const { controls, risks, tests, policies, populations } = frameworkData;
 
@@ -137,7 +137,10 @@ export function useProgressData(frameworkSlug = "soc-2") {
 function normalizeStatus(status) {
   const s = String(status ?? "").toLowerCase().trim();
   if (["complete", "completed", "implemented", "ready"].includes(s)) return "implemented";
+  if (s === "implemented") return "implemented";
   if (s === "approved") return "approved";
+  if (s === "applicable" || s === "pending assessment") return "not_started";
+  if (s === "missing evidence") return "missing";
   if (s === "in_progress" || s === "in progress") return "in_progress";
   if (s === "not_applicable" || s === "not applicable") return "not_applicable";
   if (s === "rejected") return "rejected";

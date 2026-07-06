@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 
 import Landing from "./pages/Landing";
@@ -6,7 +6,6 @@ import Login from "./pages/Login";
 
 import Frameworks from "./pages/Frameworks";
 import Evidence from "./pages/Evidence";
-import Risks from "./pages/Risks";
 import Vendors from "./pages/Vendors";
 import Questionnaire from "./pages/Questionnaire";
 import Implementation from "./pages/Implementation";
@@ -41,6 +40,8 @@ import SOC2Solution from "./pages/SOC2Solution";
 import ISO27001Solution from "./pages/ISO27001Solution";
 import CMMCSolution from "./pages/CMMCSolution";
 import { cmmcWorkspaceRoutes } from "./features/cmmc/routes";
+import ProtectedRoute from "./auth/ProtectedRoute";
+import ActiveFrameworkOutlet from "./framework/ActiveFrameworkOutlet";
 
 function App() {
   return (
@@ -50,43 +51,9 @@ function App() {
   element={<h1 style={{fontSize:"50px"}}>TEST PAGE</h1>}
 />
 
-<Route
-  path="/profile"
-  element={<Profile />}
-/>
-
-        <Route
-  path="/profile-settings"
-  element={<ProfileSettings />}
-/>
-
 <Route path="/about" element={<About />} />
 <Route path="/faq" element={<FAQ />} />
 <Route path="/contact" element={<Contact />} />
-
-        <Route path="/frameworks" element={<Frameworks />} />
-        <Route path="/evidence" element={<Evidence />} />
-        <Route path="/risks" element={<Risks />} />
-        <Route path="/vendors" element={<Vendors />} />
-        <Route path="/questionnaire" element={<Questionnaire />} />
-        <Route path="/implementation" element={<Implementation />} />
-        <Route path="/implementation/mandatory-documents/:documentId/upload" element={<MandatoryDocumentUpload />} />
-        <Route path="/training" element={<Training />} />
-        <Route path="/employees" element={<Employees />} />
-        <Route path="/integrations" element={<Integrations />} />
-        <Route path="/audits" element={<Audits />} />
-        <Route path="/comments" element={<Comments />} />
-        <Route path="/tasks" element={<Tasks />} />
-
-        <Route path="/trust-center" element={<TrustCenter />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/soc2" element={<SOC2 />} />
-        <Route path="/implementation/soc2" element={<SOC2 />} />
-
-        <Route
-  path="/control/:id"
-  element={<ControlDetails />}
-/>
 
 <Route
   path="/pricing"
@@ -113,14 +80,6 @@ function App() {
   element={<CMMCSolution />}
 />
 
-{cmmcWorkspaceRoutes.map(({ path, Component }) => (
-  <Route key={path} path={path} element={<Component />} />
-))}
-
-    <Route path="/policies" element={<Policies />} />
-
-    <Route path="/assistant" element={<Assistant />} />
-
       <Route
         path="/"
         element={<Landing />}
@@ -131,10 +90,36 @@ function App() {
         element={<Login />}
       />
 
-      <Route
-  path="/dashboard"
-  element={<Dashboard />}
-/>
+      <Route element={<ProtectedRoute />}>
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/profile-settings" element={<ProfileSettings />} />
+        <Route path="/frameworks" element={<Frameworks />} />
+        <Route path="/evidence" element={<Evidence />} />
+        <Route path="/risks" element={<Navigate to="/implementation?itemType=Risk" replace />} />
+        <Route path="/vendors" element={<Vendors />} />
+        <Route path="/questionnaire" element={<Questionnaire />} />
+        <Route path="/implementation" element={<Implementation />} />
+        <Route path="/implementation/mandatory-documents/:documentId/upload" element={<MandatoryDocumentUpload />} />
+        <Route path="/training" element={<Training />} />
+        <Route path="/employees" element={<Employees />} />
+        <Route path="/integrations" element={<Integrations />} />
+        <Route path="/audits" element={<Audits />} />
+        <Route path="/comments" element={<Comments />} />
+        <Route path="/tasks" element={<Tasks />} />
+        <Route path="/trust-center" element={<TrustCenter />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/soc2" element={<SOC2 />} />
+        <Route path="/implementation/soc2" element={<SOC2 />} />
+        <Route path="/control/:id" element={<ControlDetails />} />
+        <Route element={<ActiveFrameworkOutlet frameworkSlug="cmmc" />}>
+          {cmmcWorkspaceRoutes.map(({ path, Component }) => (
+            <Route key={path} path={path} element={<Component />} />
+          ))}
+        </Route>
+        <Route path="/policies" element={<Policies />} />
+        <Route path="/assistant" element={<Assistant />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Route>
 
     </Routes>
   );

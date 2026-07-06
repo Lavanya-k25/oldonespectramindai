@@ -17,12 +17,14 @@ import {
   CMMCReadinessScorePage,
   CMMCReviewStatusPage,
   CMMCRiskTrackingPage,
+  CMMCScopePage,
   CMMCSPRSScorePage,
   CMMCSSPPage,
 } from "./pages";
 
 export const cmmcWorkspaceRoutes = [
-  { path: "/cmmc", Component: CMMCOverviewPage },
+  { path: "/cmmc", Component: CMMCScopePage },
+  { path: "/cmmc/scope", Component: CMMCScopePage },
   { path: "/cmmc/overview", Component: CMMCOverviewPage },
   { path: "/cmmc/organization", Component: CMMCOrganizationPage },
   { path: "/cmmc/gap-wizard", Component: CMMCGapWizardPage },

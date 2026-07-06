@@ -4,70 +4,188 @@ import {
   Building2,
   CheckCircle2,
   FileCheck2,
+  ListChecks,
+  ScrollText,
   ShieldCheck,
+  Wrench,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import ActivityFeed from "../components/dashboard/ActivityFeed";
 import ComplianceChart from "../components/dashboard/ComplianceChart";
 import AppShell from "../components/layout/AppShell";
-import { useProgressData } from "../core/adapters/useProgressData";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
+import { buildCrossModuleTarget } from "../navigation/crossModuleNavigation";
 
 export default function Dashboard() {
-  // All dashboard metrics are calculated by ProgressEngineService —
-  // no values are hardcoded. Change your workspace in the Implementation
-  // page and the dashboard will reflect the updated numbers.
-  const { summary } = useProgressData("soc-2");
+  const { activeFramework } = useFrameworkWorkspace();
 
-  const auditReadiness = Math.round(summary.auditReadinessScore ?? 0);
-  const overallScore = Math.round(summary.overallComplianceScore ?? 0);
-  const highRisks = summary.riskBreakdown?.High ?? summary.riskBreakdown?.high ?? 0;
-  const criticalRisks = summary.riskBreakdown?.Critical ?? summary.riskBreakdown?.critical ?? 0;
-  const openRisks = summary.riskCoverage?.total - summary.riskCoverage?.completed;
-  const evidenceTotal = summary.evidenceCoverage?.total ?? 0;
-  const pendingCount = summary.pendingEvidence?.length ?? 0;
-  const overdueCount = summary.overdueTasks?.length ?? 0;
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
 
-  // Stats cards — same structure as before, values now from ProgressEngine
+  return <DashboardContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function DashboardContent({ activeFramework }) {
+  const navigate = useNavigate();
+  const {
+    audit,
+    controls,
+    implementations,
+    evidence,
+    policies,
+    risks,
+    tests,
+    tasks,
+  } = useComplianceState();
+
+  const implementationRows = [
+    ...(implementations.controls || []),
+    ...(implementations.tests || []),
+    ...(implementations.policies || []),
+    ...(implementations.risks || []),
+    ...(implementations.populations || []),
+  ];
+  const completedImplementations = implementationRows.filter(isComplete).length;
+  const totalImplementations = implementationRows.length;
+  const frameworkProgress = totalImplementations ? Math.round((completedImplementations / totalImplementations) * 100) : 0;
+  const auditReadiness = Math.round(audit.readiness ?? 0);
+  const overallScore = Math.round(audit.complianceScore ?? frameworkProgress);
+  const applicableControls = controls.filter((control) => control.applicable).length;
+  const evidenceTotal = evidence.filter((record) => !record.deletedAt).length;
+  const policiesTotal = policies.length;
+  const policiesPublished = policies.filter((policy) => policy.status === "Active" || isComplete(policy)).length;
+  const openRisks = risks.filter((risk) => risk.applicable && ["Open", "In Progress"].includes(risk.treatmentStatus || risk.status)).length;
+  const testsTotal = tests.length;
+  const completedTests = tests.filter(isComplete).length;
+  const openTasks = tasks.filter((task) => !isComplete(task)).length;
+  const recentActivityCount = audit.timeline?.length || 0;
+  const highRisks = risks.filter((risk) => ["High", "Critical"].includes(risk.riskLevel || risk.severity) && ["Open", "In Progress"].includes(risk.treatmentStatus || risk.status)).length;
+
   const stats = [
     {
       label: "Compliance Score",
       value: `${overallScore}%`,
-      note: `${summary.controlCompletion?.completed ?? 0} of ${summary.controlCompletion?.total ?? 0} controls done`,
+      note: `${completedImplementations} of ${totalImplementations} implementation items complete`,
       icon: ShieldCheck,
       tone: "text-emerald-600",
+      target: { itemType: "Audit", itemId: "compliance-score" },
     },
     {
-      label: "Evidence Files",
+      label: "Audit Readiness",
+      value: `${auditReadiness}%`,
+      note: `${audit.openFindings || 0} open audit findings`,
+      icon: CheckCircle2,
+      tone: "text-blue-700",
+      target: { itemType: "Audit", itemId: "readiness" },
+    },
+    {
+      label: "Framework Progress",
+      value: `${frameworkProgress}%`,
+      note: `${activeFramework.name} active workspace`,
+      icon: Building2,
+      tone: "text-violet-600",
+      target: { itemType: "Implementation", itemId: "framework-progress" },
+    },
+    {
+      label: "Total Implementations",
+      value: String(totalImplementations),
+      note: `${completedImplementations} completed`,
+      icon: Wrench,
+      tone: "text-slate-700",
+      target: { itemType: "Implementation", itemId: "" },
+    },
+    {
+      label: "Completed Implementations",
+      value: String(completedImplementations),
+      note: `${Math.max(totalImplementations - completedImplementations, 0)} remaining`,
+      icon: CheckCircle2,
+      tone: "text-emerald-600",
+      target: { itemType: "Implementation", itemId: "" },
+    },
+    {
+      label: "Applicable Controls",
+      value: String(applicableControls),
+      note: `${controls.length} total controls`,
+      icon: ShieldCheck,
+      tone: "text-blue-700",
+      target: { itemType: "Control", itemId: "" },
+    },
+    {
+      label: "Evidence Count",
       value: String(evidenceTotal),
-      note: `${pendingCount} pending review`,
+      note: `${audit.pendingEvidence?.length || 0} missing evidence items`,
       icon: FileCheck2,
       tone: "text-blue-700",
+      target: { itemType: "Evidence", itemId: "repository" },
+    },
+    {
+      label: "Policies",
+      value: String(policiesTotal),
+      note: `${policiesPublished} published`,
+      icon: ScrollText,
+      tone: "text-amber-700",
+      target: { itemType: "Policy", itemId: "" },
     },
     {
       label: "Open Risks",
       value: String(isNaN(openRisks) ? 0 : openRisks),
-      note: `${highRisks + criticalRisks} high/critical`,
+      note: `${highRisks} high/critical`,
       icon: AlertTriangle,
       tone: "text-rose-600",
+      target: { itemType: "Risk", itemId: "" },
     },
     {
-      label: "Overdue Tasks",
-      value: String(overdueCount),
-      note: overdueCount === 0 ? "None overdue" : `${overdueCount} past due date`,
+      label: "Tests",
+      value: String(testsTotal),
+      note: `${completedTests} completed`,
+      icon: ListChecks,
+      tone: "text-indigo-700",
+      target: { itemType: "Test", itemId: "" },
+    },
+    {
+      label: "Tasks",
+      value: String(openTasks),
+      note: `${tasks.length} generated tasks`,
       icon: Building2,
       tone: "text-violet-600",
+      target: { itemType: "Task", itemId: "" },
+    },
+    {
+      label: "Recent Activity",
+      value: String(recentActivityCount),
+      note: recentActivityCount ? "Latest compliance updates" : "No activity yet",
+      icon: CheckCircle2,
+      tone: "text-emerald-600",
+      target: { itemType: "Audit", itemId: "activity" },
     },
   ];
 
-  // Readiness queue — shows top 3 missing controls (falling back to static
-  // labels if the workspace has no tracked items yet)
-  const missingControls = summary.missingControls ?? [];
-  const readiness = missingControls.length > 0
-    ? missingControls.slice(0, 3).map((c) => [c.id, "Needs attention"])
-    : [
-        ["Access reviews", "Needs attention"],
-        ["Incident response", "Needs evidence"],
-        ["Vendor due diligence", "In progress"],
-      ];
+  const readiness = (audit.checklist || []).slice(0, 3).map((item) => [
+    item.relatedItemId || item.name,
+    item.status || item.category,
+  ]);
+  const chartData = buildDashboardChartData({
+    complianceScore: overallScore,
+    auditReadiness,
+    frameworkProgress,
+    evidenceCoverage: Math.round(audit.evidenceCoverage || 0),
+    testsProgress: testsTotal ? Math.round((completedTests / testsTotal) * 100) : 0,
+    policyProgress: policiesTotal ? Math.round((policiesPublished / policiesTotal) * 100) : 0,
+  });
+  const chartDelta = chartData.length > 1 ? chartData.at(-1).score - chartData[0].score : 0;
+  const navigateToCard = (stat) => {
+    const target = buildCrossModuleTarget({
+      activeFramework,
+      itemId: stat.target.itemId,
+      itemType: stat.target.itemType,
+      moduleContext: `Dashboard:${stat.label}`,
+      mode: "view",
+    });
+    navigate(target.path, { state: target.state });
+  };
 
   return (
     <AppShell>
@@ -99,7 +217,7 @@ export default function Dashboard() {
                   <ShieldCheck size={26} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-blue-700">SOC 2 Audit Readiness</p>
+                  <p className="text-sm font-bold text-blue-700">{activeFramework.name} Audit Readiness</p>
                   <h2 className="text-4xl font-black">{auditReadiness}% ready</h2>
                 </div>
               </div>
@@ -129,6 +247,9 @@ export default function Dashboard() {
                     </span>
                   </div>
                 ))}
+                {!readiness.length && (
+                  <div className="text-sm font-semibold text-slate-500">No open readiness items.</div>
+                )}
               </div>
             </div>
           </div>
@@ -139,9 +260,11 @@ export default function Dashboard() {
             const Icon = stat.icon;
 
             return (
-              <div
+              <button
+                type="button"
                 key={stat.label}
-                className="rounded-lg border border-white/75 bg-white/62 p-5 shadow-xl shadow-slate-900/5 backdrop-blur"
+                onClick={() => navigateToCard(stat)}
+                className="rounded-lg border border-white/75 bg-white/62 p-5 text-left shadow-xl shadow-slate-900/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-blue-50/40"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -160,16 +283,33 @@ export default function Dashboard() {
                   <CheckCircle2 size={16} className="text-emerald-500" />
                   {stat.note}
                 </p>
-              </div>
+              </button>
             );
           })}
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-          <ComplianceChart />
+          <ComplianceChart data={chartData} delta={chartDelta} />
           <ActivityFeed />
         </section>
       </div>
     </AppShell>
   );
+}
+
+function isComplete(item) {
+  return ["complete", "completed", "implemented", "approved", "active", "mitigated", "accepted"].includes(
+    String(item?.status || item?.applicabilityStatus || item?.treatmentStatus || "").toLowerCase()
+  );
+}
+
+function buildDashboardChartData(scores) {
+  return [
+    ["Compliance", scores.complianceScore],
+    ["Audit", scores.auditReadiness],
+    ["Framework", scores.frameworkProgress],
+    ["Evidence", scores.evidenceCoverage],
+    ["Tests", scores.testsProgress],
+    ["Policies", scores.policyProgress],
+  ].map(([label, score]) => ({ label, score: Math.max(0, Math.min(100, Number(score) || 0)) }));
 }

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useUser } from "../auth/UserContext";
 import { APP_NAME } from "../core/adapters/useOrganizationBranding";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -20,25 +21,24 @@ const highlights = [
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useUser();
   const googleButtonRef = useRef(null);
   const [googleStatus, setGoogleStatus] = useState("");
+  const [email, setEmail] = useState("");
 
   const handleGoogleCredential = useCallback(
     (response) => {
       const profile = decodeJwt(response.credential);
-
-      localStorage.setItem(
-        "spectramind_google_user",
-        JSON.stringify({
-          email: profile.email,
-          name: profile.name,
-          picture: profile.picture,
-        })
-      );
+      login({
+        id: profile.sub,
+        email: profile.email,
+        name: profile.name,
+        picture: profile.picture,
+      });
 
       navigate("/dashboard");
     },
-    [navigate]
+    [login, navigate]
   );
 
   useEffect(() => {
@@ -90,6 +90,10 @@ export default function Login() {
 
   const handleEmailSignIn = (event) => {
     event.preventDefault();
+    login({
+      email,
+      name: email.split("@")[0],
+    });
     navigate("/dashboard");
   };
 
@@ -213,6 +217,8 @@ export default function Login() {
                   type="email"
                   placeholder="you@company.com"
                   required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white/78 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                 />
               </label>

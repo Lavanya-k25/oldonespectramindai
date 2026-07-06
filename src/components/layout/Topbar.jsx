@@ -1,6 +1,7 @@
 import { Bell, ShoppingCart, UserCircle } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useUser } from "../../auth/UserContext";
 import ThemeToggle from "./ThemeToggle";
 
 const notifications = [
@@ -11,8 +12,16 @@ const notifications = [
 ];
 
 export default function Topbar() {
+  const navigate = useNavigate();
+  const { user, logout } = useUser();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    setShowProfile(false);
+    navigate("/login", { replace: true });
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/70 bg-[#fffdf8]/76 px-5 py-4 shadow-lg shadow-slate-900/5 backdrop-blur-2xl sm:px-6 lg:px-8">
@@ -89,8 +98,8 @@ export default function Topbar() {
             >
               <UserCircle size={30} />
               <div className="hidden text-left sm:block">
-                <p className="text-sm font-black leading-tight">Admin</p>
-                <p className="text-xs text-slate-500">Organization</p>
+                <p className="text-sm font-black leading-tight">{user?.name || "User"}</p>
+                <p className="text-xs text-slate-500">{user?.organizationName || "Organization"}</p>
               </div>
             </button>
 
@@ -108,12 +117,13 @@ export default function Topbar() {
                 >
                   Profile Settings
                 </Link>
-                <Link
-                  to="/login"
+                <button
+                  type="button"
+                  onClick={handleLogout}
                   className="block px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-50"
                 >
                   Logout
-                </Link>
+                </button>
               </div>
             )}
           </div>

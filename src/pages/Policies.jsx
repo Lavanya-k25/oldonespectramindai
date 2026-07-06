@@ -1,97 +1,178 @@
 import { useState } from "react";
-import { FileText, Search, SlidersHorizontal, ChevronDown, Check, X, ShieldAlert, Download, Settings } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { FileText, Search, SlidersHorizontal, ChevronDown, X, ShieldAlert, Download, Settings } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import { readScopedJson } from "../auth/session";
+import { useUser } from "../auth/UserContext";
+import {
+  archivePolicy,
+  canManagePolicies,
+  createCustomPolicy,
+  getPolicyMetrics,
+  loadPolicyAcknowledgements,
+  loadPolicyAssignments,
+  loadPolicyLibrary,
+  publishPolicy,
+  resetPolicyAcknowledgements,
+  savePolicyAcknowledgements,
+  savePolicyAssignments,
+  savePolicyLibrary,
+  updatePolicy,
+} from "../policies/PolicyService";
 
 // Sourced dynamically from the framework engine and organization workspace state
 
-import { useFrameworkData } from "../core/adapters/useFrameworkData";
-import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
+import { buildCrossModuleTarget } from "../navigation/crossModuleNavigation";
 import { useEffect } from "react";
 
 export default function Policies() {
-  const { policies: frameworkPolicies } = useFrameworkData("soc-2");
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore();
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  return <PoliciesContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function PoliciesContent({ activeFramework }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const targetItemId = new URLSearchParams(location.search).get("item");
+  const { policies: frameworkPolicies, workspaceData, actions } = useComplianceState();
+  const { user } = useUser();
+  const canManage = canManagePolicies(user);
+  const [employees, setEmployees] = useState(() => readScopedJson("spectramind:employees", []));
+  const [policyLibrary, setPolicyLibrary] = useState(() => loadPolicyLibrary(activeFramework.id, frameworkPolicies, activeFramework));
+  const [policyAssignments, setPolicyAssignments] = useState(() =>
+    loadPolicyAssignments(activeFramework.id, readScopedJson("spectramind:employees", []), loadPolicyLibrary(activeFramework.id, frameworkPolicies, activeFramework))
+  );
 
   const [acknowledgementsState, setAcknowledgementsState] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:policy-acknowledgements");
-      return saved ? JSON.parse(saved) : {};
+      return loadPolicyAcknowledgements(activeFramework.id);
     } catch {
       return {};
     }
   });
+  const [newPolicyName, setNewPolicyName] = useState("");
+  const [newPolicyDescription, setNewPolicyDescription] = useState("");
 
-  const handleToggleAcknowledgement = (policyId, employeeName) => {
+  const persistLibrary = (nextLibrary, nextAcknowledgements = acknowledgementsState, nextAssignments = policyAssignments) => {
+    setPolicyLibrary(nextLibrary);
+    savePolicyLibrary(activeFramework.id, nextLibrary);
+    savePolicyAcknowledgements(activeFramework.id, nextAcknowledgements, employees, nextLibrary, nextAssignments);
+  };
+
+  const persistAssignments = (nextAssignments) => {
+    setPolicyAssignments(nextAssignments);
+    savePolicyAssignments(activeFramework.id, nextAssignments);
+    savePolicyAcknowledgements(activeFramework.id, acknowledgementsState, employees, policyLibrary, nextAssignments);
+  };
+
+  const handleToggleAcknowledgement = (policyId, employeeId) => {
     const policyMap = acknowledgementsState[policyId] || {};
-    const currentStatus = policyMap[employeeName] || "Pending";
-    const nextStatus = currentStatus === "Completed" ? "Pending" : "Completed";
-
+    const currentStatus = policyMap[employeeId];
     const nextState = {
       ...acknowledgementsState,
-      [policyId]: {
-        ...policyMap,
-        [employeeName]: nextStatus,
-      }
+      [policyId]: currentStatus
+        ? Object.fromEntries(Object.entries(policyMap).filter(([id]) => id !== String(employeeId)))
+        : {
+            ...policyMap,
+            [employeeId]: { acknowledgedAt: new Date().toISOString(), acknowledgedBy: user?.userId },
+          },
     };
 
     setAcknowledgementsState(nextState);
-    localStorage.setItem("spectramind:policy-acknowledgements", JSON.stringify(nextState));
-
-    // Dispatch storage event to sync with Employees.jsx immediately
-    window.dispatchEvent(new Event("storage"));
+    savePolicyAcknowledgements(activeFramework.id, nextState, employees, policyLibrary, policyAssignments);
   };
 
-  const policies = frameworkPolicies.map((p) => {
+  const updatePolicyField = (policyId, updates) => {
+    if (!canManage) return;
+    const currentPolicy = policyLibrary.find((policy) => policy.id === policyId);
+    const nextLibrary = updatePolicy(policyLibrary, policyId, updates);
+    const nextAcknowledgements =
+      currentPolicy?.requireReacknowledgement && (updates.name !== undefined || updates.description !== undefined || updates.version !== undefined)
+        ? resetPolicyAcknowledgements(acknowledgementsState, policyId)
+        : acknowledgementsState;
+    setAcknowledgementsState(nextAcknowledgements);
+    persistLibrary(nextLibrary, nextAcknowledgements);
+  };
+
+  const handlePublish = (policyId) => {
+    if (!canManage) return;
+    persistLibrary(publishPolicy(policyLibrary, policyId));
+  };
+
+  const handleArchivePolicy = (policyId) => {
+    if (!canManage) return;
+    persistLibrary(archivePolicy(policyLibrary, policyId));
+  };
+
+  const handleAssignmentToggle = (policyId, employeeId) => {
+    if (!canManage) return;
+    const current = policyAssignments[policyId] || [];
+    const next = current.includes(employeeId) ? current.filter((id) => id !== employeeId) : [...current, employeeId];
+    persistAssignments({ ...policyAssignments, [policyId]: next });
+  };
+
+  const handleCreatePolicy = () => {
+    if (!canManage || !newPolicyName.trim()) return;
+    const nextLibrary = createCustomPolicy(activeFramework.id, policyLibrary, {
+      name: newPolicyName.trim(),
+      description: newPolicyDescription.trim(),
+      owner: user?.name || "Unassigned",
+    }, activeFramework);
+    const newPolicy = nextLibrary[nextLibrary.length - 1];
+    const nextAssignments = { ...policyAssignments, [newPolicy.id]: [] };
+    setNewPolicyName("");
+    setNewPolicyDescription("");
+    setPolicyAssignments(nextAssignments);
+    savePolicyAssignments(activeFramework.id, nextAssignments);
+    persistLibrary(nextLibrary, acknowledgementsState, nextAssignments);
+  };
+
+  const currentEmployee = employees.find((employee) => employee.email?.toLowerCase() === user?.email?.toLowerCase()) ||
+    employees.find((employee) => employee.name === user?.name);
+
+  const policies = policyLibrary.map((p) => {
     const saved = workspaceData[p.id] ?? {};
-
-    // Determine frameworks assigned based on policy ID matching mockup
-    const isHipaa = ["POL-002", "POL-003", "POL-004", "POL-010", "POL-011", "POL-012"].includes(p.id);
-    const frameworksLabel = isHipaa ? "HIPAA" : "SOC 2";
-
-    // Legacy status matches mockup
-    const status = saved.status === "Approved" || saved.status === "complete" || saved.status === "implemented"
-      ? "Published"
-      : "Published - Legacy";
-
     const activeAcks = acknowledgementsState[p.id] || {};
-    
-    // Load staff names dynamically from database (localStorage)
-    const defaultStaff = (() => {
-      try {
-        const saved = localStorage.getItem("spectramind:employees");
-        const list = saved ? JSON.parse(saved) : [];
-        return list.map((emp) => emp.name);
-      } catch {
-        return [];
-      }
-    })();
-
-    const acknowledgementsList = defaultStaff.map((name) => ({
-      name,
-      status: activeAcks[name] || "Pending",
+    const metrics = getPolicyMetrics(p, employees, policyAssignments, acknowledgementsState);
+    const assignedEmployees = employees.filter((employee) => (policyAssignments[p.id] || []).includes(employee.id));
+    const visibleAcknowledgementEmployees = canManage ? assignedEmployees : assignedEmployees.filter((employee) => employee.id === currentEmployee?.id);
+    const acknowledgementsList = visibleAcknowledgementEmployees.map((employee) => ({
+      id: employee.id,
+      name: employee.name,
+      status: activeAcks[employee.id] ? "Completed" : "Pending",
     }));
-
-    const completedCount = acknowledgementsList.filter((a) => a.status === "Completed").length;
-    const totalCount = acknowledgementsList.length;
-    const acknowledgedLabel = p.id === "POL-002" ? "Not required" : `${completedCount}/${totalCount}`;
+    const sourcePolicy = p.sourcePolicy || {};
 
     return {
       id: p.id,
-      title: p.title,
-      status,
-      acknowledged: acknowledgedLabel,
-      nextVersion: "-",
+      title: p.name,
+      description: p.description,
+      status: p.status,
+      acknowledged: `${metrics.acknowledged}/${metrics.assigned}`,
+      nextVersion: p.version,
       reviewers: "-",
-      assignedTo: saved.assignments?.owner || "Unassigned",
-      renewalFrequency: "-",
-      frameworks: frameworksLabel,
-      otherFrameworks: p.id === "POL-001" ? "ISO 27001:2022" : "-",
+      assignedTo: p.owner || saved.assignments?.owner || "Unassigned",
+      renewalFrequency: p.reviewDate || "-",
+      frameworks: p.relatedFrameworks.join(", "),
+      otherFrameworks: "-",
       tags: ["All Staff"],
-      documentName: p.id === "POL-001" ? "Information security policy.docx" : `${p.title.replace(/[\/\s+]/g, "_").toLowerCase()}.docx`,
-      documentDate: "01/28/26, 08:32 PM",
+      documentName: `${p.name.replace(/[\/\s+]/g, "_").toLowerCase()}.docx`,
+      documentDate: p.effectiveDate || "-",
       acknowledgements: acknowledgementsList,
-      connectedTests: p.linkedControls?.map((ctrlId) => ({
-        title: `Organization's documented ${p.title.toLowerCase()}...`,
+      metrics,
+      policy: p,
+      connectedTests: sourcePolicy.linkedControls?.map((ctrlId) => ({
+        id: ctrlId,
+        title: ctrlId,
+        description: `Organization's documented ${p.name.toLowerCase()}...`,
         owner: saved.assignments?.owner || "Unassigned",
         status: "READY"
       })) || []
@@ -101,18 +182,53 @@ export default function Policies() {
 
   const [selectedPolicyId, setSelectedPolicyId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const visiblePolicies = canManage
+    ? policies
+    : policies.filter((policy) => currentEmployee && (policyAssignments[policy.id] || []).includes(currentEmployee.id));
 
   useEffect(() => {
-    if (policies.length && !selectedPolicyId) {
-      setSelectedPolicyId(policies[0].id);
-    }
-  }, [policies, selectedPolicyId]);
+    const refresh = () => {
+      const nextEmployees = readScopedJson("spectramind:employees", []);
+      const nextLibrary = loadPolicyLibrary(activeFramework.id, frameworkPolicies, activeFramework);
+      setEmployees(nextEmployees);
+      setPolicyLibrary(nextLibrary);
+      setPolicyAssignments(loadPolicyAssignments(activeFramework.id, nextEmployees, nextLibrary));
+      setAcknowledgementsState(loadPolicyAcknowledgements(activeFramework.id));
+    };
+    window.addEventListener("storage", refresh);
+    window.addEventListener("spectramind:policy-updated", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("spectramind:policy-updated", refresh);
+    };
+  }, [activeFramework, frameworkPolicies]);
 
-  const selectedPolicy = policies.find((p) => p.id === selectedPolicyId);
+  useEffect(() => {
+    if (targetItemId && visiblePolicies.some((policy) => policy.id === targetItemId)) {
+      setSelectedPolicyId(targetItemId);
+      return;
+    }
+    if (visiblePolicies.length && !selectedPolicyId) {
+      setSelectedPolicyId(visiblePolicies[0].id);
+    }
+  }, [targetItemId, visiblePolicies, selectedPolicyId]);
+
+  const selectedPolicy = visiblePolicies.find((p) => p.id === selectedPolicyId);
+  const openImplementationRecord = (itemId, itemType = "Control") => {
+    const target = buildCrossModuleTarget({
+      activeFramework,
+      itemId,
+      itemType,
+      moduleContext: `Policy:${selectedPolicyId || ""}`,
+      mode: "view",
+    });
+    navigate(target.path, { state: target.state });
+  };
 
   const handleArchive = (policyId) => {
+    handleArchivePolicy(policyId);
     const currentState = workspaceData[policyId] ?? {};
-    saveWorkspaceItem(policyId, {
+    actions.saveComplianceItem(policyId, {
       ...currentState,
       status: "complete", // switches legacy flow to active flow
       timeline: [
@@ -126,7 +242,7 @@ export default function Policies() {
     const currentState = workspaceData[policyId] ?? {};
     const isCurrentNotApplicable = currentState.status === "not_applicable" || currentState.status === "Not Applicable";
     const nextStatus = isCurrentNotApplicable ? "complete" : "not_applicable";
-    saveWorkspaceItem(policyId, {
+    actions.saveComplianceItem(policyId, {
       ...currentState,
       status: nextStatus,
       timeline: [
@@ -139,7 +255,7 @@ export default function Policies() {
     });
   };
 
-  const filteredPolicies = policies.filter((p) =>
+  const filteredPolicies = visiblePolicies.filter((p) =>
     p.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -225,6 +341,33 @@ export default function Policies() {
             </button>
           </div>
         </div>
+
+        {canManage ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            <h2 className="text-sm font-black text-slate-900">Create Policy</h2>
+            <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+              <input
+                value={newPolicyName}
+                onChange={(event) => setNewPolicyName(event.target.value)}
+                placeholder="Policy name"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none"
+              />
+              <input
+                value={newPolicyDescription}
+                onChange={(event) => setNewPolicyDescription(event.target.value)}
+                placeholder="Description"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleCreatePolicy}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-black text-white"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Grid split layout for Table + Right Drawer */}
         <section className="grid gap-4 xl:grid-cols-[1fr_420px] items-start">
@@ -319,6 +462,63 @@ export default function Policies() {
                 </button>
               </div>
 
+              {canManage ? (
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handlePublish(selectedPolicy.id)}
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+                    >
+                      Publish
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleArchivePolicy(selectedPolicy.id)}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+                    >
+                      Archive
+                    </button>
+                  </div>
+                  <input
+                    value={selectedPolicy.policy.name}
+                    onChange={(event) => updatePolicyField(selectedPolicy.id, { name: event.target.value })}
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none"
+                  />
+                  <textarea
+                    value={selectedPolicy.policy.description}
+                    onChange={(event) => updatePolicyField(selectedPolicy.id, { description: event.target.value })}
+                    className="min-h-20 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                  />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <input
+                      value={selectedPolicy.policy.version}
+                      onChange={(event) => updatePolicyField(selectedPolicy.id, { version: event.target.value })}
+                      placeholder="Version"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                    />
+                    <input
+                      value={selectedPolicy.policy.owner}
+                      onChange={(event) => updatePolicyField(selectedPolicy.id, { owner: event.target.value })}
+                      placeholder="Owner"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                    />
+                    <input
+                      type="date"
+                      value={selectedPolicy.policy.effectiveDate}
+                      onChange={(event) => updatePolicyField(selectedPolicy.id, { effectiveDate: event.target.value })}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                    />
+                    <input
+                      type="date"
+                      value={selectedPolicy.policy.reviewDate}
+                      onChange={(event) => updatePolicyField(selectedPolicy.id, { reviewDate: event.target.value })}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               {/* Amber Info Box (only display if status is Published - Legacy) */}
               {selectedPolicy.status === "Published - Legacy" && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-3 dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -345,6 +545,22 @@ export default function Policies() {
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Details</h4>
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Version</span>
+                    <span className="font-bold text-slate-850 dark:text-white">{selectedPolicy.policy.version}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Owner</span>
+                    <span className="font-bold text-slate-850 dark:text-white">{selectedPolicy.policy.owner}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Effective Date</span>
+                    <span className="font-bold text-slate-850 dark:text-white">{selectedPolicy.policy.effectiveDate || "-"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Review Date</span>
+                    <span className="font-bold text-slate-850 dark:text-white">{selectedPolicy.policy.reviewDate || "-"}</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-slate-500 font-semibold">Active Frameworks</span>
                     <span className="font-bold text-slate-850 dark:text-white">{selectedPolicy.frameworks}</span>
                   </div>
@@ -364,6 +580,40 @@ export default function Policies() {
                   </div>
                 </div>
               </div>
+
+              <div className="grid gap-2 rounded-lg border border-slate-100 bg-slate-50/50 p-3 text-xs font-semibold text-slate-600">
+                <div className="flex justify-between">
+                  <span>Assigned</span>
+                  <span className="font-black">{selectedPolicy.metrics.assigned}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Acknowledged</span>
+                  <span className="font-black">{selectedPolicy.metrics.acknowledged}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pending</span>
+                  <span className="font-black">{selectedPolicy.metrics.pending}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Completion</span>
+                  <span className="font-black">{selectedPolicy.metrics.percentage}%</span>
+                </div>
+              </div>
+
+              {selectedPolicy.policy.versionHistory?.length ? (
+                <details className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-slate-500">
+                    Version History
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {selectedPolicy.policy.versionHistory.map((version) => (
+                      <div key={version.id} className="rounded bg-white p-2 text-xs font-semibold text-slate-600">
+                        v{version.version} · {version.name} · {version.archivedAt ? new Date(version.archivedAt).toLocaleDateString() : "-"}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
 
               {/* Uploaded Policy Documents */}
               <div className="space-y-2">
@@ -387,27 +637,51 @@ export default function Policies() {
               {/* Employee Acknowledgements */}
               {selectedPolicy.acknowledgements.length > 0 && selectedPolicy.status !== "not_applicable" && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Employee Acknowledgements</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                    {canManage ? "Employee Assignments & Acknowledgements" : "My Acknowledgement"}
+                  </h4>
                   <div className="grid gap-2">
-                    {selectedPolicy.acknowledgements.map((ack) => (
+                    {(canManage ? employees : selectedPolicy.acknowledgements).map((item) => {
+                      const employee = canManage ? item : employees.find((candidate) => candidate.id === item.id) || item;
+                      const isAssigned = (policyAssignments[selectedPolicy.id] || []).includes(employee.id);
+                      const ack = selectedPolicy.acknowledgements.find((candidate) => candidate.id === employee.id) || {
+                        id: employee.id,
+                        name: employee.name,
+                        status: "Pending",
+                      };
+
+                      return (
                       <div
-                        key={ack.name}
-                        onClick={() => handleToggleAcknowledgement(selectedPolicy.id, ack.name)}
-                        className="flex items-center justify-between text-sm font-semibold text-slate-700 cursor-pointer p-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/50 select-none dark:border-slate-800"
+                        key={employee.id}
+                        className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-700 p-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/50 select-none dark:border-slate-800"
                       >
                         <div className="flex items-center gap-2.5">
+                          {canManage ? (
+                            <input
+                              type="checkbox"
+                              checked={isAssigned}
+                              onChange={() => handleAssignmentToggle(selectedPolicy.id, employee.id)}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                          ) : null}
                           <span className={`h-2.5 w-2.5 rounded-full ${
                             ack.status === "Completed" ? "bg-emerald-500" : "bg-rose-500"
                           }`} />
                           <span>{ack.name}</span>
                         </div>
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                          ack.status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                        }`}>
-                          {ack.status}
-                        </span>
+                        <button
+                          type="button"
+                          disabled={!isAssigned}
+                          onClick={() => handleToggleAcknowledgement(selectedPolicy.id, employee.id)}
+                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded disabled:opacity-40 ${
+                            ack.status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {ack.status === "Completed" ? "Acknowledged" : "Acknowledge"}
+                        </button>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
               )}
@@ -418,11 +692,13 @@ export default function Policies() {
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Connected Tests</h4>
                   <div className="space-y-2">
                     {selectedPolicy.connectedTests.map((t) => (
-                      <div
-                        key={t.title}
-                        className="rounded-lg border border-slate-150 p-4 space-y-3 bg-[#fffdf8]/30 dark:border-slate-800"
+                      <button
+                        type="button"
+                        key={t.id || t.title}
+                        onClick={() => openImplementationRecord(t.id, "Control")}
+                        className="w-full rounded-lg border border-slate-150 p-4 text-left space-y-3 bg-[#fffdf8]/30 transition hover:bg-blue-50/40 dark:border-slate-800"
                       >
-                        <p className="text-sm font-bold text-slate-900 leading-relaxed">{t.title}</p>
+                        <p className="text-sm font-bold text-slate-900 leading-relaxed">{t.description || t.title}</p>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-black text-slate-600 uppercase">
@@ -434,7 +710,7 @@ export default function Policies() {
                             {t.status}
                           </span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -457,4 +733,3 @@ export default function Policies() {
     </AppShell>
   );
 }
-

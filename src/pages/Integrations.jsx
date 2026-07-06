@@ -10,7 +10,10 @@ import {
   Ticket,
 } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
-import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
+import { readScopedJson, writeScopedJson } from "../auth/session";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 const initialIntegrations = [
   {
@@ -79,19 +82,29 @@ const initialIntegrations = [
 ];
 
 export default function Integrations() {
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore();
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  return <IntegrationsContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function IntegrationsContent({ activeFramework }) {
+  const { workspaceData, actions } = useComplianceState();
+  const integrationsStorageKey = `spectramind:integrations:${activeFramework.id}`;
   const [integrationsList, setIntegrationsList] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:integrations");
-      return saved ? JSON.parse(saved) : initialIntegrations;
+      return readScopedJson(integrationsStorageKey, initialIntegrations);
     } catch {
       return initialIntegrations;
     }
   });
 
   useEffect(() => {
-    localStorage.setItem("spectramind:integrations", JSON.stringify(integrationsList));
-  }, [integrationsList]);
+    writeScopedJson(integrationsStorageKey, integrationsList);
+  }, [integrationsList, integrationsStorageKey]);
 
   const handleToggleConnection = (name) => {
     setIntegrationsList((currentList) =>
@@ -107,7 +120,7 @@ export default function Integrations() {
               const currentControlState = workspaceData[controlId] ?? {};
               if (isConnecting) {
                 // Connect -> auto-implement related controls
-                saveWorkspaceItem(controlId, {
+                actions.saveComplianceItem(controlId, {
                   ...currentControlState,
                   status: "complete",
                   dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
@@ -119,7 +132,7 @@ export default function Integrations() {
               } else {
                 // Disconnect -> reset control status
                 if (currentControlState.timeline?.[0]?.label?.includes(`via ${name}`)) {
-                  saveWorkspaceItem(controlId, {
+                  actions.saveComplianceItem(controlId, {
                     ...currentControlState,
                     status: "",
                     timeline: [
@@ -268,4 +281,3 @@ function Metric({ label, value }) {
     </div>
   );
 }
-

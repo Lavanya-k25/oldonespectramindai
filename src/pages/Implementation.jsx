@@ -15,19 +15,23 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useUser } from "../auth/UserContext";
+import { readScopedJson } from "../auth/session";
 import AppShell from "../components/layout/AppShell";
-import { useFrameworkData } from "../core/adapters/useFrameworkData";
-import { useRelationshipGraph, getLinkedItemsFromGraph } from "../core/adapters/useRelationshipGraph";
-import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
-import { DEFAULT_FRAMEWORK_ID, ISO27001_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
-import { frameworks } from "../data/mockData";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import { getLinkedItemsFromGraph } from "../core/adapters/useRelationshipGraph";
+import EvidenceManagementSection from "../evidence/EvidenceManagementSection";
+import { buildCrossModuleTarget, implementationTabForItemType } from "../navigation/crossModuleNavigation";
+import { ISO27001_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
 import { CMMCProgressRing } from "../features/cmmc/components";
 import { cmmcDomains } from "../features/cmmc/data";
+import CMMCScopePage from "../features/cmmc/pages/CMMCScopePage";
 import {
-  getQuestionnaireApplicability,
+  QUESTIONNAIRE_STATUSES,
   isRelevantToQuestionnaire,
-  loadQuestionnaireResponses,
 } from "../data/questionnaireEngine";
 
 const implementationTabs = [
@@ -532,17 +536,28 @@ const populationColumns = [
 ];
 
 export default function Implementation() {
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  return <ImplementationContent selectedFramework={activeFramework} />;
+}
+
+function ImplementationContent({ selectedFramework }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Tests");
-  const selectedFramework = getSelectedFramework(location);
-  const selectedFrameworkId = resolveFrameworkId(selectedFramework?.slug) || DEFAULT_FRAMEWORK_ID;
+  const selectedFrameworkId = resolveFrameworkId(selectedFramework?.id) || selectedFramework.id;
+  const {
+    frameworkData: rawImplementationData,
+    workspaceData,
+    questionnaireResponses,
+    relationshipGraph,
+    actions,
+  } = useComplianceState();
 
-  // OrganizationEngine now owns workspace state — routes status changes through
-  // trackControlStatus() with full audit history, while keeping the legacy
-  // flat-map format that all downstream components already read.
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore(selectedFrameworkId);
-
-  const [questionnaireResponses, setQuestionnaireResponses] = useState(() => loadQuestionnaireResponses(selectedFrameworkId));
   const isCMMC = isCMMCFramework(selectedFramework);
   const isISO27001 = selectedFrameworkId === ISO27001_FRAMEWORK_ID;
   const currentTabs = isCMMC ? cmmcImplementationTabs : isISO27001 ? iso27001ImplementationTabs : implementationTabs;
@@ -552,8 +567,6 @@ export default function Implementation() {
   // files are never modified. useFrameworkData returns the same shape that
   // getFrameworkLibrary() previously returned so all downstream components
   // continue to work without any changes.
-  const rawImplementationData = useFrameworkData(selectedFramework?.slug);
-
   const implementationData = useMemo(() => {
     if (!rawImplementationData || !rawImplementationData.controls) {
       return { controls: [], risks: [], tests: [], policies: [], populations: [] };
@@ -566,43 +579,29 @@ export default function Implementation() {
       const residualLikelihood = saved.residualLikelihood ?? 1;
       const residualImpact = saved.residualImpact ?? 3;
       return {
-        ...r,
-        owner: saved.assignments?.owner || "Unassigned",
-        status: saved.status || r.status || "Ready",
+        ...applyWorkspaceRowState(r, saved),
         initialRiskScore: initialLikelihood * initialImpact,
         residualRiskScore: residualLikelihood * residualImpact,
-        comments: saved.comments?.length || "",
       };
     });
 
     const controls = rawImplementationData.controls.map((c) => {
       const saved = (workspaceData && workspaceData[c.id]) ?? {};
-      return {
-        ...c,
-        owner: saved.assignments?.owner || "Unassigned",
-        status: saved.status || c.status || "Ready",
-        comments: saved.comments?.length || "",
-      };
+      return applyWorkspaceRowState(c, saved);
     });
 
     const tests = rawImplementationData.tests.map((t) => {
       const saved = (workspaceData && workspaceData[t.id]) ?? {};
-      return {
-        ...t,
-        owner: saved.assignments?.owner || "Unassigned",
-        status: saved.status || t.status || "Ready",
-        comments: saved.comments?.length || "",
-      };
+      return applyWorkspaceRowState(t, saved);
     });
 
     const policies = rawImplementationData.policies.map((p) => {
       const saved = (workspaceData && workspaceData[p.id]) ?? {};
-      return {
-        ...p,
-        owner: saved.assignments?.owner || "Unassigned",
-        status: saved.status || p.status || "Ready",
-        comments: saved.comments?.length || "",
-      };
+      return applyWorkspaceRowState(p, saved);
+    });
+    const populations = (rawImplementationData.populations || []).map((population) => {
+      const saved = (workspaceData && workspaceData[population.id]) ?? {};
+      return applyWorkspaceRowState(population, saved);
     });
 
     return {
@@ -611,22 +610,43 @@ export default function Implementation() {
       controls,
       tests,
       policies,
+      populations,
     };
   }, [rawImplementationData, workspaceData]);
 
   // RelationshipEngine is seeded from the framework mappings JSON so the
   // workspace panel resolves linked items via graph lookups instead of
   // hardcoded array references.
-  const relationshipGraph = useRelationshipGraph(selectedFramework?.slug);
-
   const [workspaceItem, setWorkspaceItem] = useState(() =>
     getWorkspaceItemFromLocation(window.location, implementationData)
+  );
+  const [missingWorkspaceItem, setMissingWorkspaceItem] = useState(() =>
+    getMissingWorkspaceItemFromLocation(window.location, implementationData)
   );
   const [isWorkspaceClosing, setIsWorkspaceClosing] = useState(false);
   const selectWorkspaceItem = (item, { replace = false } = {}) => {
     setIsWorkspaceClosing(false);
+    setMissingWorkspaceItem(null);
+    setActiveTab(implementationTabForItemType(item.type, defaultActiveTab));
     setWorkspaceItem(item);
     updateWorkspaceHistory(item, replace);
+  };
+  const navigateRelatedItem = (type, relatedItem, { mode = "resolve" } = {}) => {
+    const relatedId = relatedItem?.id || relatedItem?.relatedItemId || "";
+    const row = findImplementationRow(type, relatedId, implementationData);
+    if (row && ["Control", "Test", "Population", "Risk"].includes(type)) {
+      selectWorkspaceItem(createWorkspaceItem(type, row));
+      return;
+    }
+
+    const target = buildCrossModuleTarget({
+      activeFramework: selectedFramework,
+      itemId: relatedId,
+      itemType: type,
+      moduleContext: `Implementation:${workspaceItem?.id || ""}`,
+      mode,
+    });
+    navigate(target.path, { state: target.state });
   };
   const closeWorkspaceItem = () => {
     setIsWorkspaceClosing(true);
@@ -644,8 +664,26 @@ export default function Implementation() {
   }, [defaultActiveTab, selectedFramework?.slug]);
 
   useEffect(() => {
+    const nextWorkspaceItem = getWorkspaceItemFromLocation(window.location, implementationData);
+    const itemType = new URLSearchParams(location.search).get("itemType");
+    if (nextWorkspaceItem) {
+      setWorkspaceItem(nextWorkspaceItem);
+      setActiveTab(implementationTabForItemType(nextWorkspaceItem.type, defaultActiveTab));
+      setMissingWorkspaceItem(null);
+    } else if (itemType) {
+      setActiveTab(implementationTabForItemType(itemType, defaultActiveTab));
+      setMissingWorkspaceItem(getMissingWorkspaceItemFromLocation(window.location, implementationData));
+    } else {
+      setMissingWorkspaceItem(getMissingWorkspaceItemFromLocation(window.location, implementationData));
+    }
+  }, [defaultActiveTab, implementationData, location.search]);
+
+  useEffect(() => {
     const syncWorkspaceFromUrl = () => {
-      setWorkspaceItem(getWorkspaceItemFromLocation(window.location, implementationData));
+      const nextWorkspaceItem = getWorkspaceItemFromLocation(window.location, implementationData);
+      setWorkspaceItem(nextWorkspaceItem);
+      if (nextWorkspaceItem) setActiveTab(implementationTabForItemType(nextWorkspaceItem.type, defaultActiveTab));
+      setMissingWorkspaceItem(getMissingWorkspaceItemFromLocation(window.location, implementationData));
     };
 
     window.addEventListener("popstate", syncWorkspaceFromUrl);
@@ -653,19 +691,8 @@ export default function Implementation() {
     return () => window.removeEventListener("popstate", syncWorkspaceFromUrl);
   }, [implementationData]);
 
-  useEffect(() => {
-    const refreshQuestionnaireResponses = () => setQuestionnaireResponses(loadQuestionnaireResponses(selectedFrameworkId));
-    window.addEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
-    window.addEventListener("storage", refreshQuestionnaireResponses);
-
-    return () => {
-      window.removeEventListener("spectramind:questionnaire-updated", refreshQuestionnaireResponses);
-      window.removeEventListener("storage", refreshQuestionnaireResponses);
-    };
-  }, [selectedFrameworkId]);
-
-  if (!selectedFramework) {
-    return <SelectFrameworkScreen />;
+  if (isCMMC) {
+    return <CMMCScopePage />;
   }
 
   const shouldShowWorkspace = !isCMMC && workspaceItem;
@@ -704,6 +731,11 @@ export default function Implementation() {
               workspaceData={workspaceData}
               onSelectWorkspaceItem={selectWorkspaceItem}
             />
+            {missingWorkspaceItem && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                {missingWorkspaceItem.type} {missingWorkspaceItem.id} is no longer available in this framework. Use this module to locate the current replacement.
+              </div>
+            )}
           </div>
 
           {shouldShowWorkspace && (
@@ -719,11 +751,12 @@ export default function Implementation() {
                 data={implementationData}
                 savedState={workspaceData && workspaceData[workspaceItem.id]}
                 relationshipGraph={relationshipGraph}
+                onNavigateRelatedItem={navigateRelatedItem}
                 onWorkspaceStateChange={(itemId, nextState) => {
                   // Route through OrganizationEngine for proper audit tracking,
                   // then the hook syncs both the engine snapshot and the legacy
                   // flat-map so all downstream reads continue to work.
-                  saveWorkspaceItem(itemId, nextState);
+                  actions.saveComplianceItem(itemId, nextState);
                 }}
                 onClose={closeWorkspaceItem}
               />
@@ -4481,8 +4514,8 @@ function RiskScenariosSection({ rows, questionnaireResponses, workspaceData, sel
           </thead>
           <tbody className="bg-white/60">
             {filteredRisks.map((risk) => {
-              const applicability = getQuestionnaireApplicability(risk, questionnaireResponses);
-              const isDisabled = applicability === "Not applicable";
+              const applicability = getCentralApplicability(risk);
+              const isDisabled = applicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE;
 
               return (
               <tr
@@ -4613,7 +4646,7 @@ function ControlsSection({ rows, questionnaireResponses, workspaceData, selected
                 className="bg-transparent font-bold outline-none"
               >
                 <option value="All">Filter</option>
-                <option value="Implemented">Implemented</option>
+                <option value="Completed">Completed</option>
                 <option value="In Progress">In progress</option>
                 <option value="Needs Review">Needs review</option>
                 <option value="Open">Open</option>
@@ -4667,8 +4700,8 @@ function ControlsSection({ rows, questionnaireResponses, workspaceData, selected
           </thead>
           <tbody className="bg-white/60">
             {filteredControls.map((control) => {
-              const applicability = getQuestionnaireApplicability(control, questionnaireResponses);
-              const isDisabled = applicability === "Not applicable";
+              const applicability = getCentralApplicability(control);
+              const isDisabled = applicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE;
 
               return (
               <tr
@@ -4691,7 +4724,7 @@ function ControlsSection({ rows, questionnaireResponses, workspaceData, selected
                   isDisabled
                     ? "cursor-not-allowed bg-slate-50/70 opacity-60"
                     : `cursor-pointer hover:bg-blue-50/50 ${
-                        selectedControl?.id === control.id || isRelevantToQuestionnaire(control, questionnaireResponses) ? "bg-blue-50/70" : ""
+                        selectedControl?.id === control.id || isCentrallyPrioritized(control, questionnaireResponses) ? "bg-blue-50/70" : ""
                       }`
                 }`}
               >
@@ -4703,7 +4736,7 @@ function ControlsSection({ rows, questionnaireResponses, workspaceData, selected
                   <span className="font-black text-slate-900">
                     {control.title}
                   </span>
-                  {isRelevantToQuestionnaire(control, questionnaireResponses) && (
+                  {isCentrallyPrioritized(control, questionnaireResponses) && (
                     <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-black text-blue-800">
                       Prioritized
                     </span>
@@ -4848,8 +4881,8 @@ function TestsSection({ rows, questionnaireResponses, workspaceData, selectedFra
           </thead>
           <tbody className="bg-white/60">
             {filteredTests.map((test) => {
-              const applicability = getQuestionnaireApplicability(test, questionnaireResponses);
-              const isDisabled = applicability === "Not applicable";
+              const applicability = getCentralApplicability(test);
+              const isDisabled = applicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE;
 
               return (
               <tr
@@ -5005,8 +5038,8 @@ function PoliciesSection({ rows, questionnaireResponses, workspaceData, selected
           </thead>
           <tbody className="bg-white/60">
             {filteredPolicies.map((policy) => {
-              const applicability = getQuestionnaireApplicability(policy, questionnaireResponses);
-              const isDisabled = applicability === "Not applicable";
+              const applicability = getCentralApplicability(policy);
+              const isDisabled = applicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE;
 
               return (
               <tr
@@ -5183,8 +5216,8 @@ function PopulationSection({ rows, questionnaireResponses, workspaceData, select
           </thead>
           <tbody className="bg-white/60">
             {filteredPopulations.map((population) => {
-              const applicability = getQuestionnaireApplicability(population, questionnaireResponses);
-              const isDisabled = applicability === "Not applicable";
+              const applicability = getCentralApplicability(population);
+              const isDisabled = applicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE;
 
               return (
               <tr
@@ -5221,7 +5254,8 @@ function PopulationSection({ rows, questionnaireResponses, workspaceData, select
   );
 }
 
-function ImplementationWorkspace({ item, framework, data, savedState = {}, onWorkspaceStateChange, onClose, relationshipGraph }) {
+function ImplementationWorkspace({ item, framework, data, savedState = {}, onWorkspaceStateChange, onClose, relationshipGraph, onNavigateRelatedItem }) {
+  const { user } = useUser();
   const state = savedState || {};
   const linkedItems = getLinkedItemsFromGraph(item, data, relationshipGraph);
   const frameworkBadge = framework?.shortName || framework?.name || "Framework";
@@ -5234,16 +5268,45 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
   });
   const evidenceFiles = state.evidenceFiles || [];
   const evidenceByRequirement = state.evidenceByRequirement || {};
+  const linkedEvidenceIds = state.linkedEvidenceIds || [];
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState(state.comments || []);
   const [timeline, setTimeline] = useState(state.timeline || []);
   const tasks = state.tasks || [];
+  const {
+    audit,
+    evidenceStore,
+    policies: centralPolicies,
+    questionnaireResponses: centralQuestionnaireResponses,
+    tasks: centralTasks,
+    actions,
+  } = useComplianceState();
+  const evidenceRecords = evidenceStore.records;
+  const setEvidenceRecords = actions.saveEvidenceRecords;
+  const relationshipDetails = useMemo(
+    () =>
+      buildImplementationRelationshipDetails({
+        item,
+        linkedItems,
+        data,
+        evidenceRecords,
+        audit,
+        tasks: centralTasks,
+        policies: centralPolicies,
+        questionnaireResponses: centralQuestionnaireResponses,
+        workspaceState: state,
+      }),
+    [audit, centralPolicies, centralQuestionnaireResponses, centralTasks, data, evidenceRecords, item, linkedItems, state]
+  );
+  const navigateRelated = (type, relatedItem, mode = "resolve") => {
+    if (!onNavigateRelatedItem) return;
+    onNavigateRelatedItem(type, relatedItem, { mode });
+  };
 
   // Load dynamic employee list (no fake fallbacks)
   const employeesList = useMemo(() => {
     try {
-      const saved = localStorage.getItem("spectramind:employees");
-      const list = saved ? JSON.parse(saved) : [];
+      const list = readScopedJson("spectramind:employees", []);
       const names = list.map((emp) => emp.name);
       if (!names.includes("Unassigned")) names.push("Unassigned");
       return names;
@@ -5266,6 +5329,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
       assignments,
       evidenceFiles,
       evidenceByRequirement,
+      linkedEvidenceIds,
       comments,
       timeline,
       tasks,
@@ -5276,6 +5340,42 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
       residualImpact,
       ...overrides,
     });
+  };
+
+  const handleEvidenceChange = (linkedEvidence) => {
+    const nextEvidenceFiles = linkedEvidence.map((record) => {
+      const version = record.versions?.find((candidate) => candidate.id === record.currentVersionId) || record.versions?.at(-1);
+      return {
+        id: record.id,
+        name: version?.fileName || record.title,
+        status: record.evidenceStatus || "Pending Review",
+        version: version?.versionNumber || 1,
+        uploadedAt: version?.uploadedAt || record.createdAt,
+      };
+    });
+    const nextEvidenceIds = nextEvidenceFiles.map((evidence) => evidence.id);
+    const nextTimeline = [
+      { id: `evidence-${Date.now()}`, label: "Evidence updated" },
+      ...timeline,
+    ];
+
+    setTimeline(nextTimeline);
+    saveWorkspaceState({
+      status: nextEvidenceFiles.length ? "Pending Review" : organizationStatus,
+      evidenceFiles: nextEvidenceFiles,
+      linkedEvidenceIds: nextEvidenceIds,
+      evidenceCount: nextEvidenceFiles.length,
+      timeline: nextTimeline,
+    });
+
+    for (const control of linkedItems.controls || []) {
+      onWorkspaceStateChange(control.id, {
+        evidenceCount: nextEvidenceFiles.length,
+        linkedEvidenceIds: nextEvidenceIds,
+        evidenceFiles: nextEvidenceFiles,
+        evidenceStatus: nextEvidenceFiles.length ? "Pending Review" : "Missing",
+      });
+    }
   };
 
   const addTimelineEvent = (label, stateOverrides = {}) => {
@@ -5325,19 +5425,10 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
   const addComment = () => {
     const trimmedComment = commentText.trim();
     if (!trimmedComment) return;
-    const activeAuthor = (() => {
-      try {
-        const saved = localStorage.getItem("spectramind:employees");
-        const list = saved ? JSON.parse(saved) : [];
-        return list[0]?.name || "Admin";
-      } catch {
-        return "Admin";
-      }
-    })();
 
     const newCommentObj = {
       id: `comment-${Date.now()}`,
-      user: activeAuthor,
+      user: user?.name || "User",
       text: trimmedComment,
       timestamp: new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
     };
@@ -5371,6 +5462,48 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
       </div>
     );
   };
+
+  const renderRelationshipExtras = () => (
+    <>
+      <RelationshipSummaryBadges details={relationshipDetails} onNavigate={navigateRelated} />
+      <RelatedSection
+        title="Connected Policies"
+        items={relationshipDetails.policies}
+        emptyLabel="No connected policies."
+        onOpen={(policy) => navigateRelated("Policy", policy)}
+      />
+      <RelatedSection
+        title="Connected Evidence"
+        items={relationshipDetails.evidence}
+        emptyLabel="No connected evidence."
+        onOpen={(evidence) => navigateRelated("Evidence", evidence)}
+      />
+      <RelatedSection
+        title="Related Questionnaire Answers"
+        items={relationshipDetails.questionnaire}
+        emptyLabel="No related questionnaire answers."
+        onOpen={(answer) => navigateRelated("Questionnaire", answer, "view")}
+      />
+      <RelatedSection
+        title="Open Tasks"
+        items={relationshipDetails.tasks}
+        emptyLabel="No open tasks."
+        onOpen={(task) => navigateRelated("Task", task)}
+      />
+      <RelatedSection
+        title="Audit Findings"
+        items={relationshipDetails.auditFindings}
+        emptyLabel="No open audit findings."
+        onOpen={(finding) => navigateRelated(auditFindingToItemType(finding), { id: finding.relatedItemId }, "view")}
+      />
+      <RelatedSection
+        title="Recent Activity"
+        items={relationshipDetails.activity}
+        emptyLabel="No recent activity."
+        readOnly
+      />
+    </>
+  );
 
   // ── 1. TEST DRAWER LAYOUT ──────────────────────────────────────────────────
   if (item.type === "Test") {
@@ -5479,6 +5612,8 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
           </div>
         </div>
 
+        {renderRelationshipExtras()}
+
         {/* Mapped Controls Section */}
         <div className="space-y-3 border-b border-slate-100 pb-5">
           <div className="flex items-center justify-between">
@@ -5488,7 +5623,12 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
             </button>
           </div>
           {linkedItems.controls?.map((ctrl) => (
-            <div key={ctrl.id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-3">
+            <button
+              type="button"
+              key={ctrl.id}
+              onClick={() => navigateRelated("Control", ctrl)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 text-left space-y-3 transition hover:bg-blue-50/40"
+            >
               <p className="text-sm font-black text-slate-900">{ctrl.title}</p>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -5501,12 +5641,25 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                   <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
                     IMPLEMENTED
                   </span>
-                  <button className="text-xs font-bold text-blue-600 hover:underline">Unlink</button>
+                  <span className="text-xs font-bold text-blue-600">Unlink</span>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
+
+        <EvidenceManagementSection
+          context={{
+            frameworkId: framework?.id || framework?.slug || frameworkBadge,
+            domain: item.category || item.domain || item.annexDomain || "General",
+            controlIds: linkedItems.controls?.map((control) => control.id) || item.linkedControls || [],
+            testId: item.id,
+            implementationId: item.id,
+          }}
+          records={evidenceRecords}
+          onRecordsChange={setEvidenceRecords}
+          onEvidenceChange={handleEvidenceChange}
+        />
 
         {/* History Section */}
         <div className="space-y-3 border-b border-slate-100 pb-5">
@@ -5548,7 +5701,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
 
   // ── 2. CONTROL DRAWER LAYOUT ───────────────────────────────────────────────
   if (item.type === "Control") {
-    const isImplemented = organizationStatus === "complete" || organizationStatus === "Implemented";
+    const isCompleted = ["complete", "completed", "Completed", "Implemented"].includes(organizationStatus);
 
     return (
       <aside className="h-full min-w-0 overflow-y-auto bg-white p-5 space-y-6 w-full">
@@ -5557,7 +5710,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
           <div className="space-y-2">
             <div className="flex gap-2">
               <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500 uppercase tracking-wide">
-                {isImplemented ? "IMPLEMENTED" : "IN PROGRESS"}
+                {isCompleted ? "COMPLETED" : "APPLICABLE"}
               </span>
               <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500 uppercase tracking-wide">
                 {frameworkBadge}
@@ -5621,6 +5774,8 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
           </div>
         </div>
 
+        {renderRelationshipExtras()}
+
         {/* Linked Tests Section */}
         <div className="space-y-3 border-b border-slate-100 pb-5">
           <div className="flex items-center justify-between">
@@ -5630,7 +5785,12 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
             </button>
           </div>
           {linkedItems.tests?.map((t) => (
-            <div key={t.id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-3">
+            <button
+              type="button"
+              key={t.id}
+              onClick={() => navigateRelated("Test", t)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 text-left space-y-3 transition hover:bg-blue-50/40"
+            >
               <p className="text-sm font-black text-slate-900">{t.title}</p>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500">{t.id}</span>
@@ -5638,7 +5798,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                   READY
                 </span>
               </div>
-            </div>
+            </button>
           ))}
           {!linkedItems.tests?.length && (
             <p className="text-xs font-semibold text-slate-400 italic">No connected tests.</p>
@@ -5654,7 +5814,12 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
             </button>
           </div>
           {linkedItems.risks?.map((r) => (
-            <div key={r.id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-2">
+            <button
+              type="button"
+              key={r.id}
+              onClick={() => navigateRelated("Risk", r)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 text-left space-y-2 transition hover:bg-blue-50/40"
+            >
               <p className="text-sm font-black text-slate-900">{r.title}</p>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500">{r.id}</span>
@@ -5662,7 +5827,7 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                   Mitigated
                 </span>
               </div>
-            </div>
+            </button>
           ))}
           {!linkedItems.risks?.length && (
             <p className="text-xs font-semibold text-slate-400 italic">No mitigated risks.</p>
@@ -5937,7 +6102,12 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
             </button>
           </div>
           {linkedItems.controls?.map((ctrl) => (
-            <div key={ctrl.id} className="rounded-lg border border-slate-150 p-4 space-y-3.5 bg-white">
+            <button
+              type="button"
+              key={ctrl.id}
+              onClick={() => navigateRelated("Control", ctrl)}
+              className="w-full rounded-lg border border-slate-150 p-4 text-left space-y-3.5 bg-white transition hover:bg-blue-50/40"
+            >
               <p className="text-sm font-black text-slate-950 leading-relaxed">{ctrl.title}</p>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -5950,17 +6120,19 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
                   <span className="rounded bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-black text-indigo-700">
                     IMPLEMENTED
                   </span>
-                  <button className="text-xs font-black text-slate-400 hover:text-slate-600 hover:underline">
+                  <span className="text-xs font-black text-slate-400">
                     Unlink
-                  </button>
+                  </span>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
           {!linkedItems.controls?.length && (
             <p className="text-xs font-semibold text-slate-400 italic">No mapped controls.</p>
           )}
         </div>
+
+        {renderRelationshipExtras()}
 
         {/* History / Comment Timeline Section */}
         <div className="space-y-3">
@@ -6117,6 +6289,8 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
           )}
         </div>
 
+        {renderRelationshipExtras()}
+
         <div className="space-y-3">
           <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">History</h4>
           {comments.map((comment, index) => renderComment(comment, index))}
@@ -6152,6 +6326,234 @@ function ImplementationWorkspace({ item, framework, data, savedState = {}, onWor
   );
 }
 
+function RelationshipSummaryBadges({ details, onNavigate }) {
+  const badges = [
+    ["Tests", details.tests.length, "Test", details.tests[0]],
+    ["Risks", details.risks.length, "Risk", details.risks[0]],
+    ["Policies", details.policies.length, "Policy", details.policies[0]],
+    ["Evidence", details.evidence.length, "Evidence", details.evidence[0]],
+    ["Tasks", details.tasks.length, "Task", details.tasks[0]],
+    ["Audit Findings", details.auditFindings.length, auditFindingToItemType(details.auditFindings[0]), details.auditFindings[0] ? { id: details.auditFindings[0].relatedItemId } : null],
+  ];
+
+  return (
+    <div className="space-y-3 border-b border-slate-100 pb-5">
+      <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Relationship Summary</h4>
+      <div className="flex flex-wrap gap-2">
+        {badges.map(([label, count, type, target]) => (
+          <button
+            key={label}
+            type="button"
+            disabled={!target}
+            onClick={() => target && onNavigate(type, target)}
+            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700 transition hover:bg-blue-50 disabled:cursor-default disabled:opacity-60"
+          >
+            {label}: {count}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RelatedSection({ title, items, emptyLabel, onOpen, readOnly = false }) {
+  return (
+    <div className="space-y-3 border-b border-slate-100 pb-5">
+      <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">{title}</h4>
+      {items.length ? (
+        items.slice(0, 6).map((related) => (
+          <button
+            type="button"
+            key={related.id}
+            disabled={readOnly}
+            onClick={() => !readOnly && onOpen?.(related)}
+            className="w-full rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 text-left transition hover:bg-blue-50/40 disabled:cursor-default disabled:hover:bg-slate-50/50"
+          >
+            <p className="text-sm font-black text-slate-900">{related.title || related.name}</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="truncate text-xs font-bold text-slate-500">{related.id}</span>
+              <span className="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-black uppercase text-blue-700">
+                {related.status || related.category || "Open"}
+              </span>
+            </div>
+            {related.description && (
+              <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">{related.description}</p>
+            )}
+          </button>
+        ))
+      ) : (
+        <p className="text-xs font-semibold text-slate-400 italic">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
+function buildImplementationRelationshipDetails({
+  item,
+  linkedItems,
+  data,
+  evidenceRecords,
+  audit,
+  tasks,
+  policies,
+  questionnaireResponses,
+  workspaceState,
+}) {
+  const relatedIds = new Set([
+    item.id,
+    ...(item.linkedControls || []),
+    ...(item.linkedTests || []),
+    ...(item.linkedRisks || []),
+    ...(item.linkedPolicies || []),
+    ...(linkedItems.controls || []).map((row) => row.id),
+    ...(linkedItems.tests || []).map((row) => row.id),
+    ...(linkedItems.risks || []).map((row) => row.id),
+    ...(linkedItems.policies || []).map((row) => row.id),
+  ].filter(Boolean));
+
+  const connectedPolicies = uniqueById([
+    ...(linkedItems.policies || []),
+    ...(data.policies || []).filter((policy) => relatedIds.has(policy.id) || intersects(policy.linkedControls, relatedIds)),
+    ...(policies || []).filter((policy) => relatedIds.has(policy.id) || intersects(policy.linkedControls || policy.relatedControls, relatedIds)),
+  ]).map(normalizeRelatedRow);
+
+  const connectedEvidence = (evidenceRecords || [])
+    .filter((record) => !record.deletedAt && evidenceRecordMatchesIds(record, relatedIds))
+    .map((record) => ({
+      id: record.id,
+      title: record.metadata?.fileName || record.title || record.id,
+      description: record.description || record.metadata?.description || "",
+      status: record.evidenceStatus || record.metadata?.evidenceStatus || "Evidence",
+    }));
+
+  const relatedQuestionnaire = Object.entries(questionnaireResponses || {})
+    .filter(([questionId, value]) => questionnaireAnswerMatchesItem(questionId, value, item, relatedIds))
+    .map(([questionId, value]) => ({
+      id: questionId,
+      title: questionId,
+      description: formatQuestionnaireAnswer(value),
+      status: "Answered",
+    }));
+
+  const openTasks = (tasks || [])
+    .filter((task) => taskMatchesIds(task, relatedIds) && !isTaskComplete(task))
+    .map((task) => ({
+      id: task.id || `${task.itemId || item.id}:${task.title || task.name}`,
+      title: task.title || task.name || "Open task",
+      description: task.description || task.itemId || "",
+      status: task.status || "Open",
+    }));
+
+  const auditFindings = (audit?.findings || [])
+    .filter((finding) => relatedIds.has(finding.relatedItemId))
+    .map((finding) => ({
+      id: finding.id,
+      title: finding.name,
+      description: finding.description,
+      status: finding.status,
+      category: finding.category,
+      relatedItemId: finding.relatedItemId,
+    }));
+
+  const activity = [
+    ...(workspaceState.timeline || []).map((event) => ({
+      id: event.id || event.label,
+      title: event.label || "Workspace updated",
+      description: event.timestamp || "",
+      status: "Activity",
+    })),
+    ...(audit?.timeline || [])
+      .filter((event) => event.detail === item.id || relatedIds.has(event.detail))
+      .map((event) => ({
+        id: event.id,
+        title: event.name,
+        description: event.timestamp ? new Date(event.timestamp).toLocaleString() : event.detail,
+        status: event.category,
+      })),
+  ];
+
+  return {
+    tests: (linkedItems.tests || []).map(normalizeRelatedRow),
+    risks: (linkedItems.risks || []).map(normalizeRelatedRow),
+    policies: connectedPolicies,
+    evidence: connectedEvidence,
+    questionnaire: relatedQuestionnaire,
+    tasks: openTasks,
+    auditFindings,
+    activity,
+  };
+}
+
+function normalizeRelatedRow(row) {
+  return {
+    id: row.id,
+    title: row.riskName || row.name || row.title || row.id,
+    description: row.description || row.category || "",
+    status: row.status || row.applicabilityStatus || "Linked",
+  };
+}
+
+function evidenceRecordMatchesIds(record, ids) {
+  const recordIds = [
+    record.id,
+    record.evidenceId,
+    record.metadata?.linkedTest,
+    ...(record.metadata?.linkedControls || []),
+    ...(record.mappings || []).map((mapping) => mapping.controlId),
+    ...(record.mappings || []).map((mapping) => mapping.testId),
+    ...(record.mappings || []).map((mapping) => mapping.requirementId),
+  ].filter(Boolean);
+  return recordIds.some((id) => ids.has(id));
+}
+
+function questionnaireAnswerMatchesItem(questionId, value, item, relatedIds) {
+  const haystack = [
+    questionId,
+    item.id,
+    item.category,
+    item.title,
+    Array.isArray(value) ? value.join(" ") : String(value || ""),
+  ].join(" ").toLowerCase();
+  return [...relatedIds].some((id) => haystack.includes(String(id).toLowerCase())) ||
+    haystack.includes(String(item.category || "").toLowerCase());
+}
+
+function formatQuestionnaireAnswer(value) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (value && typeof value === "object") return Object.values(value).join(", ");
+  return String(value || "Answered");
+}
+
+function taskMatchesIds(task, ids) {
+  return [task.itemId, task.relatedItemId, task.controlId, task.testId, task.policyId, task.riskId]
+    .filter(Boolean)
+    .some((id) => ids.has(id));
+}
+
+function isTaskComplete(task) {
+  return ["complete", "completed", "done", "resolved"].includes(String(task.status || "").toLowerCase());
+}
+
+function intersects(values = [], ids) {
+  return (values || []).some((value) => ids.has(value));
+}
+
+function uniqueById(rows) {
+  return Array.from(new Map(rows.filter(Boolean).map((row) => [row.id, row])).values());
+}
+
+function auditFindingToItemType(finding = {}) {
+  return {
+    Controls: "Control",
+    Implementations: "Population",
+    Evidence: "Evidence",
+    Policies: "Policy",
+    Risks: "Risk",
+    Tests: "Test",
+    Training: "Training",
+    Questionnaire: "Questionnaire",
+  }[finding.category] || "Questionnaire";
+}
 
 function RiskCell({ children, strong = false }) {
   return (
@@ -6225,18 +6627,35 @@ function completedCount(rows, predicate) {
 
 function renderStatusPill(row, defaultApplicability, workspaceData) {
   const saved = (workspaceData && workspaceData[row.id]) || {};
-  const status = String(saved.status || row.status || "").toLowerCase();
+  const status = String(row.applicabilityStatus || row.questionnaireStatus || row.status || saved.status || "").toLowerCase();
 
   if (status === "not_applicable" || status === "not applicable") {
     return <RiskPill tone="Medium">Not Applicable</RiskPill>;
   }
   if (["complete", "completed", "implemented", "approved"].includes(status)) {
-    return <RiskPill tone="Low">Implemented</RiskPill>;
+    return <RiskPill tone="Low">Completed</RiskPill>;
   }
-  if (defaultApplicability === "Not applicable") {
+  if (status === "pending assessment") {
+    return <RiskPill tone="Medium">Pending Assessment</RiskPill>;
+  }
+  if (defaultApplicability === QUESTIONNAIRE_STATUSES.NOT_APPLICABLE) {
     return <RiskPill tone="Medium">Not Applicable</RiskPill>;
   }
+  if (defaultApplicability === QUESTIONNAIRE_STATUSES.PENDING_ASSESSMENT) {
+    return <RiskPill tone="Medium">Pending Assessment</RiskPill>;
+  }
+  if (defaultApplicability === QUESTIONNAIRE_STATUSES.COMPLETED) {
+    return <RiskPill tone="Low">Completed</RiskPill>;
+  }
   return <RiskPill>Applicable</RiskPill>;
+}
+
+function getCentralApplicability(row) {
+  return row?.applicabilityStatus || row?.questionnaireStatus || row?.status || QUESTIONNAIRE_STATUSES.PENDING_ASSESSMENT;
+}
+
+function isCentrallyPrioritized(row, questionnaireResponses) {
+  return row?.isQuestionnairePrioritized ?? isRelevantToQuestionnaire(row, questionnaireResponses);
 }
 
 function getMandatoryDocStatus(document, workspaceData) {
@@ -6279,7 +6698,7 @@ function compareRiskRows(a, b, sortBy) {
   }
 
   if (sortBy === "dueDate") {
-    return new Date(a.dueDate) - new Date(b.dueDate);
+    return compareDueDates(a.dueDate, b.dueDate);
   }
 
   return String(a[sortBy]).localeCompare(String(b[sortBy]), undefined, {
@@ -6289,7 +6708,7 @@ function compareRiskRows(a, b, sortBy) {
 
 function compareControlRows(a, b, sortBy) {
   if (sortBy === "dueDate") {
-    return new Date(a.dueDate) - new Date(b.dueDate);
+    return compareDueDates(a.dueDate, b.dueDate);
   }
 
   return String(a[sortBy]).localeCompare(String(b[sortBy]), undefined, {
@@ -6299,12 +6718,37 @@ function compareControlRows(a, b, sortBy) {
 
 function compareTestRows(a, b, sortBy) {
   if (sortBy === "dueDate") {
-    return new Date(a.dueDate) - new Date(b.dueDate);
+    return compareDueDates(a.dueDate, b.dueDate);
   }
 
   return String(a[sortBy]).localeCompare(String(b[sortBy]), undefined, {
     numeric: true,
   });
+}
+
+function applyWorkspaceRowState(row, saved = {}) {
+  const assignments = saved.assignments || {};
+  return {
+    ...row,
+    owner: assignments.owner || row.owner || "Unassigned",
+    reviewer: assignments.reviewer || row.reviewer || "Unassigned",
+    approver: assignments.approver || row.approver || "Unassigned",
+    dueDate: saved.dueDate || row.dueDate || "",
+    status: saved.status || row.status || "",
+    evidenceStatus: saved.evidenceStatus || row.evidenceStatus || "",
+    evidenceCount: saved.evidenceCount ?? row.evidenceCount,
+    evidenceFiles: saved.evidenceFiles || row.evidenceFiles || [],
+    linkedEvidenceIds: saved.linkedEvidenceIds || row.linkedEvidenceIds || [],
+    comments: saved.comments?.length ?? row.comments ?? "",
+  };
+}
+
+function compareDueDates(a, b) {
+  const first = Date.parse(a || "");
+  const second = Date.parse(b || "");
+  const safeFirst = Number.isNaN(first) ? Number.MAX_SAFE_INTEGER : first;
+  const safeSecond = Number.isNaN(second) ? Number.MAX_SAFE_INTEGER : second;
+  return safeFirst - safeSecond;
 }
 
 function createWorkspaceItem(type, item) {
@@ -6376,6 +6820,21 @@ function getWorkspaceItemFromLocation(locationValue, data) {
 
   if (!itemType || !itemId) return null;
 
+  const row = findImplementationRow(itemType, itemId, data);
+
+  return row ? createWorkspaceItem(itemType, row) : null;
+}
+
+function getMissingWorkspaceItemFromLocation(locationValue, data) {
+  const searchParams = new URLSearchParams(locationValue.search);
+  const itemType = searchParams.get("itemType");
+  const itemId = searchParams.get("itemId");
+
+  if (!itemType || !itemId) return null;
+  return findImplementationRow(itemType, itemId, data) ? null : { type: itemType, id: itemId };
+}
+
+function findImplementationRow(itemType, itemId, data) {
   const rowsByType = {
     Risk: data.risks,
     Control: data.controls,
@@ -6383,9 +6842,7 @@ function getWorkspaceItemFromLocation(locationValue, data) {
     Policy: data.policies,
     Population: data.populations,
   };
-  const row = rowsByType[itemType]?.find((item) => item.id === itemId);
-
-  return row ? createWorkspaceItem(itemType, row) : null;
+  return rowsByType[itemType]?.find((row) => row.id === itemId) || null;
 }
 
 function downloadExcelFile(fileName, rows) {
@@ -6414,33 +6871,4 @@ function downloadExcelFile(fileName, rows) {
 
 function isCMMCFramework(framework) {
   return framework?.slug === "cmmc";
-}
-
-function getSelectedFramework(location) {
-  const searchParams = new URLSearchParams(location.search);
-  const selectedSlug = searchParams.get("framework");
-  const stateFramework = location.state?.framework;
-
-  if (stateFramework && slugifyFramework(stateFramework.name) === selectedSlug) {
-    return {
-      ...stateFramework,
-      slug: selectedSlug,
-    };
-  }
-
-  const framework = frameworks.find((item) => {
-    const slug = item.slug || slugifyFramework(item.name);
-    return slug === selectedSlug;
-  });
-
-  if (!framework) return null;
-
-  return {
-    ...framework,
-    slug: selectedSlug,
-  };
-}
-
-function slugifyFramework(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }

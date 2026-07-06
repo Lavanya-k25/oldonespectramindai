@@ -17,6 +17,8 @@ import {
   getFrameworkLibrary,
   resolveFrameworkId,
 } from "../core/engines/framework-engine/frameworkRegistry";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 const FRAMEWORK_SLUGS = {
   [DEFAULT_FRAMEWORK_ID]: "soc-2",
@@ -24,12 +26,39 @@ const FRAMEWORK_SLUGS = {
 };
 
 export default function Questionnaire() {
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  if (activeFramework.slug === "cmmc") {
+    return (
+      <AppShell>
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+            This framework uses its built-in assessment.
+          </h1>
+          <Link
+            to="/cmmc"
+            className="mt-5 inline-flex items-center justify-center rounded-lg bg-primary px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
+          >
+            Open CMMC Assessment
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  return <QuestionnaireContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function QuestionnaireContent({ activeFramework }) {
   const location = useLocation();
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const selectedFrameworkId = resolveFrameworkId(params.get("framework")) || DEFAULT_FRAMEWORK_ID;
+  const selectedFrameworkId = resolveFrameworkId(activeFramework.id) || activeFramework.id;
   const selectedQuestionnaireId = params.get("questionnaire");
-  const soc2Sections = useQuestionnaireSections(DEFAULT_FRAMEWORK_ID);
-  const isoSections = useQuestionnaireSections(ISO27001_FRAMEWORK_ID);
+  const activeSections = useQuestionnaireSections(selectedFrameworkId);
 
   return (
     <AppShell>
@@ -38,31 +67,24 @@ export default function Questionnaire() {
           key={`${selectedFrameworkId}:${selectedQuestionnaireId}`}
           frameworkId={selectedFrameworkId}
           sectionId={selectedQuestionnaireId}
-          sections={selectedFrameworkId === ISO27001_FRAMEWORK_ID ? isoSections : soc2Sections}
+          sections={activeSections}
         />
       ) : (
         <QuestionnaireLanding
-          sectionsByFramework={{
-            [DEFAULT_FRAMEWORK_ID]: soc2Sections,
-            [ISO27001_FRAMEWORK_ID]: isoSections,
-          }}
+          activeFramework={activeFramework}
+          sections={activeSections}
         />
       )}
     </AppShell>
   );
 }
 
-function QuestionnaireLanding({ sectionsByFramework }) {
+function QuestionnaireLanding({ activeFramework, sections }) {
   const frameworkGroups = [
     {
-      id: DEFAULT_FRAMEWORK_ID,
-      title: "SOC 2 Trial",
-      sections: sectionsByFramework[DEFAULT_FRAMEWORK_ID] ?? [],
-    },
-    {
-      id: ISO27001_FRAMEWORK_ID,
-      title: "ISO 27001:2022",
-      sections: sectionsByFramework[ISO27001_FRAMEWORK_ID] ?? [],
+      id: activeFramework.id,
+      title: activeFramework.name,
+      sections: sections ?? [],
     },
   ];
 

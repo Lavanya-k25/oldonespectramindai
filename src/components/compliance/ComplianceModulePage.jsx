@@ -1,4 +1,5 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import AppShell from "../layout/AppShell";
 
 export default function ComplianceModulePage({
@@ -10,7 +11,10 @@ export default function ComplianceModulePage({
   items,
   actionLabel,
   emptyMessage = "No current work.",
+  renderItemActions,
 }) {
+  const navigate = useNavigate();
+
   return (
     <AppShell>
       <div className="space-y-7">
@@ -75,8 +79,16 @@ export default function ComplianceModulePage({
           <div className="divide-y divide-slate-100">
             {items.length ? items.map((item) => (
               <div
-                key={item.title}
-                className="grid gap-4 px-6 py-5 lg:grid-cols-[1fr_160px_140px]"
+                key={item.id || item.title}
+                onClick={() => item.path && navigate(item.path)}
+                onKeyDown={(event) => {
+                  if (item.path && (event.key === "Enter" || event.key === " ")) navigate(item.path);
+                }}
+                role={item.path ? "button" : undefined}
+                tabIndex={item.path ? 0 : undefined}
+                className={`grid gap-4 px-6 py-5 lg:grid-cols-[1fr_160px_140px] ${
+                  item.path ? "cursor-pointer transition hover:bg-blue-50/40" : ""
+                }`}
               >
                 <div className="flex gap-3">
                   <CheckCircle2
@@ -96,9 +108,13 @@ export default function ComplianceModulePage({
                 <p className="text-sm font-semibold text-slate-600">
                   {item.owner}
                 </p>
-                <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-800">
-                  {item.status}
-                </span>
+                {renderItemActions ? (
+                  renderItemActions(item)
+                ) : (
+                  <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-800">
+                    {item.status}
+                  </span>
+                )}
               </div>
             )) : (
               <div className="px-6 py-10 text-center text-sm font-semibold text-slate-500">

@@ -10,24 +10,23 @@
  * The framework library is never modified.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useUser } from "../../auth/UserContext";
 import { EvidenceEngineService } from "../../evidence-engine/services/EvidenceEngineService";
-
-const STORAGE_KEY = "spectramind:evidence-store";
-const DEFAULT_ORG_ID = "default-org";
+import {
+  deleteEvidenceRecord,
+  getCurrentVersion,
+  loadEvidenceRecords,
+  saveEvidenceRecords,
+} from "../../evidence/EvidenceService";
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 
-function loadPersistedRecords() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+function loadPersistedRecords(frameworkId) {
+  return loadEvidenceRecords(frameworkId);
 }
 
-function persistRecords(records) {
+function persistRecords(records, frameworkId) {
   // Strip transient blob URLs before serialising — they die on reload anyway.
   const metadata = records.map((ev) => ({
     ...ev,
@@ -39,7 +38,7 @@ function persistRecords(records) {
   }));
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(metadata));
+    saveEvidenceRecords(frameworkId, metadata);
   } catch {
     // localStorage quota exceeded — silently skip
   }
@@ -56,9 +55,21 @@ function persistRecords(records) {
  *   deleteFile  — removes a record by its display name
  *   records     — raw Evidence[] from the engine (for advanced use)
  */
-export function useEvidenceStore() {
+export function useEvidenceStore(frameworkId) {
+  const { user } = useUser();
   // Seed initial state from localStorage — persisted metadata without blob URLs
-  const [records, setRecords] = useState(() => loadPersistedRecords());
+  const [records, setRecords] = useState(() => loadPersistedRecords(frameworkId));
+
+  useEffect(() => {
+    const refresh = () => setRecords(loadPersistedRecords(frameworkId));
+    refresh();
+    window.addEventListener("spectramind:evidence-updated", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("spectramind:evidence-updated", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [frameworkId]);
 
   /**
    * Rebuilds an engine from the current records snapshot, runs an operation
@@ -69,10 +80,15 @@ export function useEvidenceStore() {
       const engine = new EvidenceEngineService({ evidence: currentRecords });
       operation(engine);
       const next = engine.toJSON();
-      persistRecords(next);
+      persistRecords(next, frameworkId);
       return next;
     });
-  }, []);
+  }, [frameworkId]);
+
+  const saveRecords = useCallback((nextRecords) => {
+    persistRecords(nextRecords, frameworkId);
+    setRecords(nextRecords);
+  }, [frameworkId]);
 
   /** Handles a browser file input change event. */
   const uploadFile = useCallback(
@@ -82,35 +98,37 @@ export function useEvidenceStore() {
 
       withEngine((engine) => {
         engine.uploadEvidence({
-          organizationId: DEFAULT_ORG_ID,
+          organizationId: user.organizationId,
+          frameworkId,
           title: file.name,
           description: categoryFromFileName(file.name),
           file,
-          uploadedBy: "current-user",
+          uploadedBy: user.userId,
         });
       });
     },
-    [withEngine],
+    [user, withEngine],
   );
 
   /** Removes an evidence record by its display name. */
   const deleteFile = useCallback(
     (fileName) => {
       setRecords((currentRecords) => {
-        const next = currentRecords.filter((r) => {
-          const latestVersion = r.versions?.at(-1);
-          return (latestVersion?.fileName ?? r.title) !== fileName;
+        const record = currentRecords.find((r) => {
+          const latestVersion = getCurrentVersion(r);
+          return (latestVersion?.fileName ?? r.title) === fileName;
         });
-        persistRecords(next);
+        const next = record ? deleteEvidenceRecord(currentRecords, record.id, user, "Deleted from evidence repository") : currentRecords;
+        persistRecords(next, frameworkId);
         return next;
       });
     },
-    [],
+    [frameworkId, user],
   );
 
   // ── Derive display-ready { name, category, uploaded } list ───────────────
-  const files = records.map((ev) => {
-    const latestVersion = ev.versions?.at(-1);
+  const files = records.filter((ev) => !ev.deletedAt).map((ev) => {
+    const latestVersion = getCurrentVersion(ev);
     const name = latestVersion?.fileName ?? ev.title;
     const category = ev.description || categoryFromFileName(name);
     const uploaded = latestVersion
@@ -120,7 +138,7 @@ export function useEvidenceStore() {
     return { id: ev.id, name, category, uploaded };
   });
 
-  return { files, uploadFile, deleteFile, records };
+  return { files, uploadFile, deleteFile, records, setRecords: saveRecords };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

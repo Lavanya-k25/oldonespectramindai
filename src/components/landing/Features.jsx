@@ -22,9 +22,9 @@ const features = [
   },
   {
     icon: Radar,
-    title: "Risk Register",
+    title: "Risk Scenarios",
     description:
-      "Score, prioritize, and track mitigation work without losing the business decision trail.",
+      "Use questionnaire-driven framework risk scenarios to prioritize mitigation work.",
   },
   {
     icon: Building2,

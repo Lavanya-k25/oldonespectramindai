@@ -1,14 +1,22 @@
 import { useState, useEffect } from "react";
 import { Users, Plus, Mail, Search, SlidersHorizontal, Check, Edit2, Info, X, Trash2 } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
+import { readScopedJson, writeScopedJson } from "../auth/session";
+import {
+  getEmployeeTrainingCompliance,
+  loadTrainingAssignments,
+  loadTrainingCompletions,
+  loadTrainingLibrary,
+  saveTrainingCompletions,
+} from "../training/TrainingService";
+import { POLICY_STATUS_KEY } from "../policies/PolicyService";
 
 const initialEmployees = [];
 
 export default function Employees() {
   const [employees, setEmployees] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:employees");
-      return saved ? JSON.parse(saved) : initialEmployees;
+      return readScopedJson("spectramind:employees", initialEmployees);
     } catch {
       return initialEmployees;
     }
@@ -32,58 +40,59 @@ export default function Employees() {
   // Dynamic States for integration (no fake fallbacks)
   const [completionsState, setCompletionsState] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:training-completions");
-      return saved ? JSON.parse(saved) : {
-        "cybersecurity-awareness": [],
-        "hipaa-compliance": []
-      };
-    } catch {
-      return {
-        "cybersecurity-awareness": [],
-        "hipaa-compliance": []
-      };
-    }
-  });
-
-  const [acknowledgementsState, setAcknowledgementsState] = useState(() => {
-    try {
-      const saved = localStorage.getItem("spectramind:policy-acknowledgements");
-      return saved ? JSON.parse(saved) : {};
+      return loadTrainingCompletions();
     } catch {
       return {};
     }
   });
+  const [trainingLibrary, setTrainingLibrary] = useState(() => loadTrainingLibrary());
+  const [trainingAssignments, setTrainingAssignments] = useState(() => loadTrainingAssignments(employees, loadTrainingLibrary()));
+
+  const [acknowledgementsState, setAcknowledgementsState] = useState(() => {
+    try {
+      return readScopedJson("spectramind:policy-acknowledgements", {});
+    } catch {
+      return {};
+    }
+  });
+  const [policyStatusState, setPolicyStatusState] = useState(() => readScopedJson(POLICY_STATUS_KEY, {}));
 
   const [bgChecksState, setBgChecksState] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:background-checks");
-      return saved ? JSON.parse(saved) : {};
+      return readScopedJson("spectramind:background-checks", {});
     } catch {
       return {};
     }
   });
 
   useEffect(() => {
-    localStorage.setItem("spectramind:employees", JSON.stringify(employees));
+    writeScopedJson("spectramind:employees", employees);
   }, [employees]);
 
   // Listener to handle instant bidirectional sync when Policies/Training pages modify localStorage
   useEffect(() => {
     const handleStorageChange = () => {
       try {
-        const savedTraining = localStorage.getItem("spectramind:training-completions");
-        if (savedTraining) setCompletionsState(JSON.parse(savedTraining));
+        const nextLibrary = loadTrainingLibrary();
+        setTrainingLibrary(nextLibrary);
+        setTrainingAssignments(loadTrainingAssignments(employees, nextLibrary));
+        setCompletionsState(loadTrainingCompletions());
 
-        const savedPolicy = localStorage.getItem("spectramind:policy-acknowledgements");
-        if (savedPolicy) setAcknowledgementsState(JSON.parse(savedPolicy));
+        setAcknowledgementsState(readScopedJson("spectramind:policy-acknowledgements", {}));
+        setPolicyStatusState(readScopedJson(POLICY_STATUS_KEY, {}));
 
-        const savedBg = localStorage.getItem("spectramind:background-checks");
-        if (savedBg) setBgChecksState(JSON.parse(savedBg));
+        setBgChecksState(readScopedJson("spectramind:background-checks", {}));
       } catch { /* ignore */ }
     };
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
+    window.addEventListener("spectramind:training-updated", handleStorageChange);
+    window.addEventListener("spectramind:policy-updated", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("spectramind:training-updated", handleStorageChange);
+      window.removeEventListener("spectramind:policy-updated", handleStorageChange);
+    };
+  }, [employees]);
 
   const handleToggleAccess = (id) => {
     setEmployees(
@@ -94,11 +103,12 @@ export default function Employees() {
   const handleToggleTraining = (trainingId, emp) => {
     const list = completionsState[trainingId] || [];
     const idKey = emp.id;
-    const nextList = list.includes(idKey) ? list.filter(id => id !== idKey) : [...list, idKey];
+    const nextList = list[idKey]
+      ? Object.fromEntries(Object.entries(list).filter(([id]) => id !== String(idKey)))
+      : { ...list, [idKey]: { completedAt: new Date().toISOString() } };
     const nextCompletions = { ...completionsState, [trainingId]: nextList };
     setCompletionsState(nextCompletions);
-    localStorage.setItem("spectramind:training-completions", JSON.stringify(nextCompletions));
-    window.dispatchEvent(new Event("storage"));
+    saveTrainingCompletions(nextCompletions, employees, trainingLibrary, trainingAssignments);
   };
 
   const handleToggleBgCheck = (name) => {
@@ -106,16 +116,14 @@ export default function Employees() {
     const next = current === "Completed" ? "Pending" : "Completed";
     const nextState = { ...bgChecksState, [name]: next };
     setBgChecksState(nextState);
-    localStorage.setItem("spectramind:background-checks", JSON.stringify(nextState));
+    writeScopedJson("spectramind:background-checks", nextState);
     window.dispatchEvent(new Event("storage"));
   };
 
   const getEmployeeCompliance = (emp) => {
-    const cyberList = completionsState["cybersecurity-awareness"] || [];
-    const cyberOk = cyberList.includes(emp.id) || cyberList.includes(emp.name);
-
-    const hipaaList = completionsState["hipaa-compliance"] || [];
-    const hipaaOk = hipaaList.includes(emp.id) || hipaaList.includes(emp.name);
+    const trainingCompliance = getEmployeeTrainingCompliance(emp, trainingLibrary, trainingAssignments, completionsState);
+    const cyberOk = trainingCompliance.isCompliant;
+    const hipaaOk = trainingCompliance.isCompliant;
 
     const activePolicyIds = ["POL-001", "POL-003", "POL-004", "POL-010", "POL-011", "POL-012"];
     let completedPoliciesCount = 0;
@@ -126,11 +134,11 @@ export default function Employees() {
       }
     });
     // Policy count matches default mockup logic
-    const policyOk = completedPoliciesCount >= 5;
+    const policyOk = policyStatusState[emp.id]?.isCompliant ?? completedPoliciesCount >= 5;
 
     const bgOk = bgChecksState[emp.name] === "Completed";
 
-    const satisfiedCount = (cyberOk ? 1 : 0) + (hipaaOk ? 1 : 0) + (policyOk ? 1 : 0) + (bgOk ? 1 : 0);
+    const satisfiedCount = (trainingCompliance.isCompliant ? 2 : 0) + (policyOk ? 1 : 0) + (bgOk ? 1 : 0);
     const isCompliant = satisfiedCount === 4;
 
     return {
@@ -226,6 +234,8 @@ export default function Employees() {
       emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.role.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const soc2TrainingId = trainingLibrary.find((training) => training.relatedFrameworks?.includes("SOC 2"))?.id || "soc2-security-awareness";
+  const hipaaTrainingId = trainingLibrary.find((training) => training.relatedFrameworks?.includes("HIPAA"))?.id || "hipaa-privacy";
 
   const totalEmps = employees.length;
 
@@ -482,7 +492,7 @@ export default function Employees() {
                                 <button
                                   type="button"
                                   title="Toggle Cybersecurity Training Completion"
-                                  onClick={() => handleToggleTraining("cybersecurity-awareness", emp)}
+                                  onClick={() => handleToggleTraining(soc2TrainingId, emp)}
                                   className={`h-4 px-1 text-[9px] font-black rounded border transition ${
                                     comp.cyberOk ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-400 border-slate-200"
                                   }`}
@@ -492,7 +502,7 @@ export default function Employees() {
                                 <button
                                   type="button"
                                   title="Toggle HIPAA Training Completion"
-                                  onClick={() => handleToggleTraining("hipaa-compliance", emp)}
+                                  onClick={() => handleToggleTraining(hipaaTrainingId, emp)}
                                   className={`h-4 px-1 text-[9px] font-black rounded border transition ${
                                     comp.hipaaOk ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-slate-50 text-slate-400 border-slate-200"
                                   }`}

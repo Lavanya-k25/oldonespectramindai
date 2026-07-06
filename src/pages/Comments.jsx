@@ -1,24 +1,30 @@
 import { useState, useMemo } from "react";
 import { MessageSquare, Send, X, Trash2 } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
-import { useOrganizationStore } from "../core/adapters/useOrganizationStore";
+import { useUser } from "../auth/UserContext";
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 export default function Comments() {
-  const { workspaceData, saveWorkspaceItem } = useOrganizationStore();
+  const { activeFramework } = useFrameworkWorkspace();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  return <CommentsContent key={activeFramework.id} activeFramework={activeFramework} />;
+}
+
+function CommentsContent({ activeFramework }) {
+  const { user } = useUser();
+  const { workspaceData, actions } = useComplianceState();
   const [activeTab, setActiveTab] = useState("All");
   const [selectedCommentId, setSelectedCommentId] = useState(null);
   const [replyText, setReplyText] = useState("");
 
   // Resolve active author from database
-  const activeUser = useMemo(() => {
-    try {
-      const saved = localStorage.getItem("spectramind:employees");
-      const list = saved ? JSON.parse(saved) : [];
-      return list[0]?.name || "Admin";
-    } catch {
-      return "Admin";
-    }
-  }, []);
+  const activeUser = useMemo(() => user?.name || "User", [user]);
 
   // Gather all comments from workspaceData
   const allComments = useMemo(() => {
@@ -94,7 +100,7 @@ export default function Comments() {
 
     const updatedComments = [...(currentState.comments ?? []), newReply];
 
-    saveWorkspaceItem(targetId, {
+    actions.saveComplianceItem(targetId, {
       ...currentState,
       comments: updatedComments,
     });
@@ -111,7 +117,7 @@ export default function Comments() {
       return idToCheck !== commentId;
     });
 
-    saveWorkspaceItem(itemId, {
+    actions.saveComplianceItem(itemId, {
       ...currentState,
       comments: updatedComments,
     });

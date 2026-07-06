@@ -20,11 +20,13 @@
  */
 
 import { useCallback, useMemo, useState, useEffect } from "react";
+import { useUser } from "../../auth/UserContext";
+import { getOrganizationScopedStorageKey, getStoredSession } from "../../auth/session";
 import { OrganizationEngineService } from "../../organization-engine/services/OrganizationEngineService";
 import { DEFAULT_FRAMEWORK_ID, resolveFrameworkId } from "../engines/framework-engine/frameworkRegistry";
+import { assessFrameworkQuestionnaire } from "../../questionnaire/QuestionnaireEngine";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DEFAULT_ORG_ID = "default-org";
 const DEFAULT_ORG_NAME = "My Organization";
 
 const LEGACY_WORKSPACE_KEY = "spectramind:organization-workspace";
@@ -33,9 +35,9 @@ const QUESTIONNAIRE_KEY = "spectramind:onboarding-questionnaire";
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 
-function loadEngineWorkspace() {
+function loadEngineWorkspace(session = getStoredSession()) {
   try {
-    const raw = localStorage.getItem(ENGINE_WORKSPACE_KEY);
+    const raw = localStorage.getItem(getOrganizationScopedStorageKey(ENGINE_WORKSPACE_KEY, session));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -44,9 +46,9 @@ function loadEngineWorkspace() {
   }
 }
 
-function persistEngineWorkspace(workspace) {
+function persistEngineWorkspace(workspace, session = getStoredSession()) {
   try {
-    localStorage.setItem(ENGINE_WORKSPACE_KEY, JSON.stringify(workspace));
+    localStorage.setItem(getOrganizationScopedStorageKey(ENGINE_WORKSPACE_KEY, session), JSON.stringify(workspace));
   } catch { /* quota exceeded */ }
 }
 
@@ -54,9 +56,9 @@ function persistEngineWorkspace(workspace) {
  * Loads the legacy flat workspace map { [itemId]: { status, owner, ... } }
  * still used by the Implementation.jsx as `workspaceData`.
  */
-function loadLegacyWorkspace() {
+function loadLegacyWorkspace(session = getStoredSession()) {
   try {
-    const raw = localStorage.getItem(LEGACY_WORKSPACE_KEY);
+    const raw = localStorage.getItem(getOrganizationScopedStorageKey(LEGACY_WORKSPACE_KEY, session));
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : {};
@@ -65,9 +67,9 @@ function loadLegacyWorkspace() {
   }
 }
 
-function persistLegacyWorkspace(data) {
+function persistLegacyWorkspace(data, session = getStoredSession()) {
   try {
-    localStorage.setItem(LEGACY_WORKSPACE_KEY, JSON.stringify(data));
+    localStorage.setItem(getOrganizationScopedStorageKey(LEGACY_WORKSPACE_KEY, session), JSON.stringify(data));
     window.dispatchEvent(new Event("spectramind:workspace-updated"));
   } catch { /* quota exceeded */ }
 }
@@ -78,25 +80,27 @@ function persistLegacyWorkspace(data) {
  * Creates a seeded OrganizationEngineService with the default org + framework
  * already bootstrapped, loading any previously persisted state.
  */
-function createBootstrappedEngine(persistedWorkspace, frameworkId = DEFAULT_FRAMEWORK_ID) {
+function createBootstrappedEngine(persistedWorkspace, frameworkId = null, session = getStoredSession()) {
   const engine = new OrganizationEngineService(persistedWorkspace ?? {});
-  const frameworkIds = [...new Set([DEFAULT_FRAMEWORK_ID, frameworkId].filter(Boolean))];
+  const frameworkIds = [...new Set([frameworkId].filter(Boolean))];
+  const organizationId = session?.organizationId || "anonymous";
+  const organizationName = session?.organizationName || DEFAULT_ORG_NAME;
 
   // Ensure the default org exists
-  const hasOrg = engine.toJSON().organizations.some((o) => o.id === DEFAULT_ORG_ID);
+  const hasOrg = engine.toJSON().organizations.some((o) => o.id === organizationId);
   if (!hasOrg) {
-    engine.onboardOrganization({ id: DEFAULT_ORG_ID, name: DEFAULT_ORG_NAME });
+    engine.onboardOrganization({ id: organizationId, name: organizationName });
   }
 
   // Ensure required frameworks are assigned without removing existing assignments.
   for (const id of frameworkIds) {
     const hasFw = engine.toJSON().frameworks.some(
-      (f) => f.organizationId === DEFAULT_ORG_ID && f.frameworkId === id
+      (f) => f.organizationId === organizationId && f.frameworkId === id
     );
     if (!hasFw) {
       try {
         engine.assignFramework({
-          organizationId: DEFAULT_ORG_ID,
+          organizationId,
           frameworkId: id,
         });
       } catch { /* already assigned */ }
@@ -116,18 +120,19 @@ function createBootstrappedEngine(persistedWorkspace, frameworkId = DEFAULT_FRAM
  *   saveWorkspaceItem(itemId, state) — saves to OrganizationEngine + legacy key
  *   engine          — raw OrganizationEngineService instance for advanced use
  */
-export function useOrganizationStore(frameworkId = DEFAULT_FRAMEWORK_ID) {
-  const activeFrameworkId = resolveFrameworkId(frameworkId) || DEFAULT_FRAMEWORK_ID;
+export function useOrganizationStore(frameworkId = null) {
+  const { user } = useUser();
+  const activeFrameworkId = resolveFrameworkId(frameworkId) || frameworkId || "";
   // Seed from persisted engine snapshot
-  const [engineSnapshot, setEngineSnapshot] = useState(() => loadEngineWorkspace());
+  const [engineSnapshot, setEngineSnapshot] = useState(() => loadEngineWorkspace(user));
 
   // Flat workspace map — mirrors the legacy organizationWorkspace.js format
-  const [legacyWorkspaceData, setLegacyWorkspaceData] = useState(() => loadLegacyWorkspace());
+  const [legacyWorkspaceData, setLegacyWorkspaceData] = useState(() => loadLegacyWorkspace(user));
 
   // Build (or rebuild) engine from the persisted snapshot
   const engine = useMemo(
-    () => createBootstrappedEngine(engineSnapshot, activeFrameworkId),
-    [activeFrameworkId, engineSnapshot]
+    () => createBootstrappedEngine(engineSnapshot, activeFrameworkId, user),
+    [activeFrameworkId, engineSnapshot, user]
   );
 
   const workspaceData = useMemo(
@@ -138,8 +143,8 @@ export function useOrganizationStore(frameworkId = DEFAULT_FRAMEWORK_ID) {
   // Sync workspace state automatically across all components/pages in real-time
   useEffect(() => {
     const handleWorkspaceUpdate = () => {
-      setLegacyWorkspaceData(loadLegacyWorkspace());
-      setEngineSnapshot(loadEngineWorkspace());
+      setLegacyWorkspaceData(loadLegacyWorkspace(user));
+      setEngineSnapshot(loadEngineWorkspace(user));
     };
 
     window.addEventListener("spectramind:workspace-updated", handleWorkspaceUpdate);
@@ -149,7 +154,7 @@ export function useOrganizationStore(frameworkId = DEFAULT_FRAMEWORK_ID) {
       window.removeEventListener("spectramind:workspace-updated", handleWorkspaceUpdate);
       window.removeEventListener("storage", handleWorkspaceUpdate);
     };
-  }, []);
+  }, [user]);
 
   /**
    * Saves an item's workspace state.
@@ -160,8 +165,9 @@ export function useOrganizationStore(frameworkId = DEFAULT_FRAMEWORK_ID) {
     (itemId, state) => {
       // 1. Update the OrganizationEngine
       try {
+        if (!activeFrameworkId) return;
         engine.trackControlStatus({
-          organizationId: DEFAULT_ORG_ID,
+          organizationId: user.organizationId,
           frameworkId: activeFrameworkId,
           controlId: itemId,
           status: normalizeOrgStatus(state.status),
@@ -172,17 +178,23 @@ export function useOrganizationStore(frameworkId = DEFAULT_FRAMEWORK_ID) {
 
       // 2. Persist the engine snapshot for next session
       const nextSnapshot = engine.toJSON();
-      persistEngineWorkspace(nextSnapshot);
+      persistEngineWorkspace(nextSnapshot, user);
       setEngineSnapshot(nextSnapshot);
 
       // 3. Update + persist the legacy flat workspace map dynamically (prevent stale closures)
-      const latestWorkspace = loadLegacyWorkspace();
+      const latestWorkspace = loadLegacyWorkspace(user);
       const storageKey = getLegacyWorkspaceStorageKey(activeFrameworkId, itemId);
-      const nextWorkspaceData = { ...latestWorkspace, [storageKey]: state };
-      persistLegacyWorkspace(nextWorkspaceData);
+      const nextWorkspaceData = {
+        ...latestWorkspace,
+        [storageKey]: {
+          ...(latestWorkspace[storageKey] || {}),
+          ...state,
+        },
+      };
+      persistLegacyWorkspace(nextWorkspaceData, user);
       setLegacyWorkspaceData(nextWorkspaceData);
     },
-    [activeFrameworkId, engine]
+    [activeFrameworkId, engine, user]
   );
 
   return { engine, workspaceData, saveWorkspaceItem };
@@ -210,21 +222,24 @@ export function loadOrgQuestionnaireAnswers(frameworkId = DEFAULT_FRAMEWORK_ID) 
  * also mirrors into the engine workspace as org metadata.
  */
 export function saveOrgQuestionnaireAnswers(answers, frameworkId = DEFAULT_FRAMEWORK_ID) {
-  const activeFrameworkId = resolveFrameworkId(frameworkId) || DEFAULT_FRAMEWORK_ID;
+  const activeFrameworkId = resolveFrameworkId(frameworkId) || frameworkId;
+  const session = getStoredSession();
 
   // 1. Persist to the shared questionnaire key (same key as legacy)
   try {
     localStorage.setItem(getQuestionnaireStorageKey(activeFrameworkId), JSON.stringify(answers));
   } catch { /* quota exceeded */ }
 
+  syncQuestionnaireApplicabilityToWorkspace(answers, activeFrameworkId, session);
+
   // 2. Mirror into the org engine workspace as metadata on the org record
   try {
-    const raw = localStorage.getItem(ENGINE_WORKSPACE_KEY);
+    const raw = localStorage.getItem(getOrganizationScopedStorageKey(ENGINE_WORKSPACE_KEY, session));
     const snapshot = raw ? JSON.parse(raw) : null;
-    const engine = createBootstrappedEngine(snapshot);
+    const engine = createBootstrappedEngine(snapshot, activeFrameworkId, session);
     // Update the org record metadata to timestamp the questionnaire update
     const ws = engine.toJSON();
-    const org = ws.organizations.find((o) => o.id === DEFAULT_ORG_ID);
+    const org = ws.organizations.find((o) => o.id === session?.organizationId);
     if (org) {
       org.metadata = {
         ...(org.metadata ?? {}),
@@ -233,13 +248,57 @@ export function saveOrgQuestionnaireAnswers(answers, frameworkId = DEFAULT_FRAME
         questionnaireFrameworkId: activeFrameworkId,
       };
     }
-    persistEngineWorkspace(ws);
+    persistEngineWorkspace(ws, session);
   } catch {
     // If the engine update fails, the localStorage write above already succeeded
   }
 
   // 3. Notify listeners (same event as legacy helper)
   window.dispatchEvent(new Event("spectramind:questionnaire-updated"));
+}
+
+export function syncQuestionnaireApplicabilityToWorkspace(answers, frameworkId, session = getStoredSession()) {
+  const activeFrameworkId = resolveFrameworkId(frameworkId) || frameworkId;
+  if (!activeFrameworkId) return;
+
+  try {
+    const latestWorkspace = loadLegacyWorkspace(session);
+    const frameworkWorkspace = createFrameworkWorkspaceView(latestWorkspace, activeFrameworkId);
+    const assessment = assessFrameworkQuestionnaire({
+      frameworkId: activeFrameworkId,
+      responses: answers,
+      workspaceData: frameworkWorkspace,
+    });
+
+    const nextWorkspace = { ...latestWorkspace };
+    const allAssessments = [
+      ...assessment.controls,
+      ...assessment.policies,
+      ...assessment.risks,
+      ...assessment.tests,
+      ...assessment.evidence,
+    ].filter((item) => item.id);
+
+    for (const itemAssessment of allAssessments) {
+      const storageKey = getLegacyWorkspaceStorageKey(activeFrameworkId, itemAssessment.id);
+      const currentState = nextWorkspace[storageKey] || {};
+      nextWorkspace[storageKey] = {
+        ...currentState,
+        status: itemAssessment.status,
+        questionnaire: {
+          status: itemAssessment.status,
+          applicable: itemAssessment.applicable,
+          itemType: itemAssessment.itemType,
+          reason: itemAssessment.reason,
+          assessedAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    persistLegacyWorkspace(nextWorkspace, session);
+  } catch {
+    // Questionnaire responses remain saved even if applicability sync cannot run.
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,7 +312,8 @@ function getLegacyWorkspaceStorageKey(frameworkId, itemId) {
 }
 
 function getQuestionnaireStorageKey(frameworkId = DEFAULT_FRAMEWORK_ID) {
-  return frameworkId === DEFAULT_FRAMEWORK_ID ? QUESTIONNAIRE_KEY : `${QUESTIONNAIRE_KEY}:${frameworkId}`;
+  const baseKey = frameworkId === DEFAULT_FRAMEWORK_ID ? QUESTIONNAIRE_KEY : `${QUESTIONNAIRE_KEY}:${frameworkId}`;
+  return getOrganizationScopedStorageKey(baseKey);
 }
 
 function createFrameworkWorkspaceView(workspace, frameworkId) {

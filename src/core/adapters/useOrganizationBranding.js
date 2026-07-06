@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readScopedValue, writeScopedValue } from "../../auth/session";
 
 export const APP_NAME = "SpectraMind.ai";
 export const ORGANIZATION_LOGO_STORAGE_KEY = "spectramind:organization-logo";
@@ -10,7 +11,7 @@ export function readOrganizationLogo() {
   }
 
   try {
-    return window.localStorage.getItem(ORGANIZATION_LOGO_STORAGE_KEY) || "";
+    return readScopedValue(ORGANIZATION_LOGO_STORAGE_KEY);
   } catch {
     return "";
   }
@@ -22,13 +23,9 @@ export function saveOrganizationLogo(logoDataUrl) {
   }
 
   try {
-    if (logoDataUrl) {
-      window.localStorage.setItem(ORGANIZATION_LOGO_STORAGE_KEY, logoDataUrl);
-    } else {
-      window.localStorage.removeItem(ORGANIZATION_LOGO_STORAGE_KEY);
-    }
-
-    window.dispatchEvent(new Event(ORGANIZATION_BRANDING_EVENT));
+    writeScopedValue(ORGANIZATION_LOGO_STORAGE_KEY, logoDataUrl, {
+      eventName: ORGANIZATION_BRANDING_EVENT,
+    });
   } catch {
     window.dispatchEvent(new Event(ORGANIZATION_BRANDING_EVENT));
   }

@@ -1,13 +1,23 @@
 import { Lock, Mail, ShieldCheck } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
-
-const trustItems = [
-  ["Compliance Status", "SOC 2 In Progress", ShieldCheck],
-  ["Security Contact", "security@spectramind.ai", Mail],
-  ["Evidence Access", "Gated by approval", Lock],
-];
+import { useComplianceState } from "../compliance/ComplianceStateContext";
+import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 export default function TrustCenter() {
+  const { activeFramework } = useFrameworkWorkspace();
+  const { trustCenter } = useComplianceState();
+
+  if (!activeFramework) {
+    return <ActiveFrameworkRequired />;
+  }
+
+  const trustItems = [
+    ["Compliance Status", `${activeFramework.name} In Progress`, ShieldCheck],
+    ["Security Contact", "security@spectramind.ai", Mail],
+    ["Evidence Access", `${trustCenter.evidenceApproved}/${trustCenter.evidenceTotal} approved`, Lock],
+  ];
+
   return (
     <AppShell>
       <div className="space-y-6">

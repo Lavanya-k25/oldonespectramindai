@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Building2, Plus, X } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
+import { readScopedJson, writeScopedJson } from "../auth/session";
 
 const initialVendors = [
   { id: 1, name: "AWS", category: "Cloud Provider", risk: "Low", reviewDate: "July 2026" },
@@ -18,8 +19,7 @@ const riskStyles = {
 export default function Vendors() {
   const [vendors, setVendors] = useState(() => {
     try {
-      const saved = localStorage.getItem("spectramind:vendors");
-      return saved ? JSON.parse(saved) : initialVendors;
+      return readScopedJson("spectramind:vendors", initialVendors);
     } catch {
       return initialVendors;
     }
@@ -32,7 +32,7 @@ export default function Vendors() {
   const [reviewDate, setReviewDate] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("spectramind:vendors", JSON.stringify(vendors));
+    writeScopedJson("spectramind:vendors", vendors);
   }, [vendors]);
 
   const handleSubmit = (e) => {
@@ -210,4 +210,3 @@ export default function Vendors() {
     </AppShell>
   );
 }
-
