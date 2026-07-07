@@ -2,6 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
 import CMMCImplementationLayout from "../components/CMMCImplementationLayout";
 import { useCMMCWorkspaceFilters } from "../components";
+import { useCMMCWorkflowState } from "../hooks";
 
 const sections = [
   {
@@ -9,12 +10,89 @@ const sections = [
     title: "System Inventory",
     subtitle: "Cloud services, devices, servers, network",
     questions: [
-      { id: "systemName", label: "What is the name of the system or enclave that will process CUI?", type: "text", placeholder: "Example: Contractor Managed IT Enclave" },
-      { id: "hostingModel", label: "Where are scoped systems hosted?", type: "select", options: ["Select hosting model", "Commercial cloud", "On-premises", "Hybrid", "Managed service provider"] },
-      { id: "cloudServices", label: "Which cloud services store, process, or transmit CUI?", type: "checkbox", options: ["Microsoft 365 GCC High", "Azure Government", "AWS GovCloud", "Google Workspace", "None"] },
-      { id: "endpointCount", label: "How many endpoints are in the CUI boundary?", type: "select", options: ["Select range", "1-25", "26-100", "101-500", "500+"] },
-      { id: "networkSegmentation", label: "Is the CUI environment segmented from corporate IT?", type: "radio", options: ["Yes", "No", "Partially"] },
-      { id: "inventoryOwner", label: "Who owns the authoritative asset inventory?", type: "text", placeholder: "Example: IT Operations Manager" },
+      {
+        id: "cloudEmail",
+        label: "Do you use cloud-based email?",
+        reference: "NIST SP 800-18 3.2.1 \u2014 System Description; NIST SP 800-171 3.1 \u2014 System Boundary",
+        type: "checkbox",
+        options: [
+          "Microsoft 365 GCC High (Government Community Cloud High)",
+          "Microsoft 365 GCC (Government Community Cloud)",
+          "Microsoft 365 Commercial (standard business subscription)",
+          "Google Workspace for Government (FedRAMP authorized)",
+          "Google Workspace Commercial (standard)",
+          "Other cloud email",
+          "On-premises email only",
+          "No email system",
+        ],
+      },
+      {
+        id: "cloudFileStorage",
+        label: "Do you use cloud file storage?",
+        reference: "NIST SP 800-18 3.2.1 \u2014 System Description; CMMC CAP Scoping Guidance",
+        type: "checkbox",
+        options: [
+          "SharePoint / OneDrive (part of M365 GCC High)",
+          "SharePoint / OneDrive (part of M365 GCC)",
+          "SharePoint / OneDrive (Commercial)",
+          "Google Drive for Government (FedRAMP authorized)",
+          "Google Drive Commercial",
+          "Dropbox / Box",
+          "AWS S3 or similar",
+          "Other cloud storage",
+          "No cloud file storage",
+        ],
+      },
+      {
+        id: "onPremServers",
+        label: "Do you have on-premises servers?",
+        reference: "NIST SP 800-37 3.2.1 \u2014 System Boundary Definition",
+        type: "radio",
+        options: [
+          "Yes \u2014 1 to 5 servers",
+          "Yes \u2014 6 to 20 servers",
+          "Yes \u2014 more than 20 servers",
+          "No on-premises servers",
+        ],
+      },
+      {
+        id: "cloudPlatforms",
+        label: "Do you use cloud computing platforms?",
+        reference: "NIST SP 800-18 3.2.1 \u2014 System Description; CMMC CAP Scoping Guidance",
+        type: "checkbox",
+        options: [
+          "Microsoft Azure",
+          "Amazon Web Services (AWS)",
+          "Google Cloud Platform",
+          "Other cloud platforms",
+          "No cloud computing platforms",
+        ],
+      },
+      {
+        id: "endUserDevices",
+        label: "What types of end-user devices does your organization use?",
+        reference: "NIST SP 800-171 Rev 2 AC.L1.001 \u2014 Authorized Users and Devices",
+        type: "checkbox",
+        options: [
+          "Windows laptops",
+          "Mac laptops",
+          "Windows desktops",
+          "Tablets (company-owned)",
+          "Smartphones (company-owned)",
+        ],
+      },
+      {
+        id: "networkInfrastructure",
+        label: "Do you manage your own network infrastructure?",
+        reference: "NIST SP 800-171 Rev 2 SC family \u2014 System & Communications Protection",
+        type: "radio",
+        options: [
+          "Yes \u2014 firewalls, switches, routers",
+          "Yes \u2014 basic router/firewall only",
+          "No \u2014 managed by ISP or MSP",
+          "No network infrastructure",
+        ],
+      },
     ],
   },
   {
@@ -34,10 +112,46 @@ const sections = [
     title: "Workforce",
     subtitle: "Headcount, remote workers, BYOD, IT support",
     questions: [
-      { id: "cuiUsers", label: "How many users require access to CUI?", type: "select", options: ["Select range", "1-10", "11-50", "51-200", "200+"] },
-      { id: "remoteAccess", label: "Do users access CUI remotely?", type: "radio", options: ["Yes", "No", "Limited exceptions"] },
-      { id: "byod", label: "Are personally owned devices allowed in the CUI boundary?", type: "radio", options: ["Yes", "No", "Under review"] },
-      { id: "supportModel", label: "Who administers scoped systems?", type: "checkbox", options: ["Internal IT", "Managed service provider", "Cloud service provider", "Engineering admin", "Security team"] },
+      {
+        id: "cuiEmployeeAccess",
+        label: "How many employees have access to CUI?",
+        reference: "NIST SP 800-171 Rev 2 AC.L1.001 \u2014 Limit system access to authorized users",
+        type: "radio",
+        options: ["1 \u2013 5", "6 \u2013 15", "16 \u2013 50", "51 \u2013 100", "More than 100"],
+      },
+      {
+        id: "remoteEmployees",
+        label: "Do employees work remotely?",
+        reference: "NIST SP 800-171 Rev 2 AC.2.006 \u2014 Remote Access; SC.3.177 \u2014 Encrypted Transmission",
+        type: "radio",
+        options: [
+          "Yes \u2014 fully remote",
+          "Yes \u2014 some employees are remote",
+          "No \u2014 all employees work on-site",
+        ],
+      },
+      {
+        id: "byodUse",
+        label: "Do employees use personal devices for work (BYOD)?",
+        reference: "NIST SP 800-171 Rev 2 AC.L1.001; CMMC CAP Scoping Guidance \u2014 BYOD",
+        type: "radio",
+        options: [
+          "Yes \u2014 personal devices access CUI",
+          "Yes \u2014 personal devices used but not for CUI",
+          "No \u2014 company devices only",
+        ],
+      },
+      {
+        id: "dedicatedItSupport",
+        label: "Do you have a dedicated IT person or team?",
+        reference: "NIST SP 800-171 Rev 2 AT family \u2014 Awareness & Training; CA family \u2014 Assessment",
+        type: "radio",
+        options: [
+          "Yes \u2014 internal IT staff",
+          "Yes \u2014 outsourced Managed Service Provider (MSP)",
+          "No dedicated IT support",
+        ],
+      },
     ],
   },
   {
@@ -57,9 +171,34 @@ const sections = [
     title: "CUI Type",
     subtitle: "CUI categories, DFARS clause, export controls",
     questions: [
-      { id: "cuiCategories", label: "What type(s) of CUI does your organization handle?", type: "checkbox", options: ["DoD CUI", "Technical Data / Engineering drawings", "Export Controlled (ITAR/EAR)", "Privacy / PII", "Law Enforcement Sensitive", "Financial / Procurement", "General CUI"] },
-      { id: "dfarsClause", label: "Do your contracts include DFARS clause 252.204-7012?", type: "radio", options: ["Yes", "No", "Unsure"] },
-      { id: "exportControlled", label: "Is any CUI marked export controlled or CUI//SP-ITAR / CUI//CTI?", type: "radio", options: ["Yes", "No", "Under review"] },
+      {
+        id: "cuiCategories",
+        label: "What type(s) of CUI does your organization handle?",
+        reference: "DoD CUI Registry (archives.gov/cui); 32 CFR Part 2002 \u2014 CUI Categories",
+        type: "checkbox",
+        options: [
+          "Technical Data / Engineering drawings",
+          "Export Controlled (ITAR/EAR)",
+          "Privacy / Personally Identifiable Information (PII)",
+          "Law Enforcement Sensitive",
+          "Financial / Procurement",
+          "General CUI (other)",
+        ],
+      },
+      {
+        id: "dfarsClause",
+        label: "Do your contracts include DFARS clause 252.204-7012?",
+        reference: "DFARS 252.204-7012 \u2014 Safeguarding Covered Defense Information; this is the clause that triggers CMMC requirements",
+        type: "radio",
+        options: ["Yes", "No", "Unsure \u2014 I need to check my contracts"],
+      },
+      {
+        id: "exportControlledCui",
+        label: "Is any of your CUI marked export controlled (CUI//SP-ITAR or CUI//CTI)?",
+        reference: "22 CFR 120-130 (ITAR); 15 CFR 730-774 (EAR); NIST SP 800-171B \u2014 Enhanced Security Requirements",
+        type: "radio",
+        options: ["Yes", "No", "Unsure"],
+      },
     ],
   },
 ];
@@ -76,20 +215,20 @@ export default function CMMCScopePage() {
 }
 
 function CMMCScopeContent({ searchQuery }) {
-  const [answers, setAnswers] = useState({});
+  const { scopeAnswers: answers, updateScopeAnswers } = useCMMCWorkflowState();
   const [openSections, setOpenSections] = useState(() => ({
     inventory: true,
     cuiFlow: false,
     workforce: false,
     connections: false,
-    cuiType: true,
+    cuiType: false,
   }));
 
   const answeredCount = useMemo(
     () => sections.flatMap((section) => section.questions).filter((question) => isAnswered(answers[question.id])).length,
     [answers]
   );
-  const progress = Math.round((answeredCount / totalQuestions) * 100);
+  const progress = totalQuestions ? Math.round((answeredCount / totalQuestions) * 100) : 0;
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleSections = useMemo(() => {
     if (!normalizedSearch) {
@@ -100,7 +239,7 @@ function CMMCScopeContent({ searchQuery }) {
       .map((section) => ({
         ...section,
         questions: section.questions.filter((question) =>
-          [section.title, section.subtitle, question.label, question.placeholder, ...(question.options || [])]
+          [section.title, section.subtitle, question.label, question.reference, question.placeholder, ...(question.options || [])]
             .filter(Boolean)
             .join(" ")
             .toLowerCase()
@@ -111,11 +250,11 @@ function CMMCScopeContent({ searchQuery }) {
   }, [normalizedSearch]);
 
   const updateAnswer = (id, value) => {
-    setAnswers((current) => ({ ...current, [id]: value }));
+    updateScopeAnswers((current) => ({ ...current, [id]: value }));
   };
 
   const toggleCheckbox = (id, option) => {
-    setAnswers((current) => {
+    updateScopeAnswers((current) => {
       const selected = Array.isArray(current[id]) ? current[id] : [];
       const next = selected.includes(option)
         ? selected.filter((item) => item !== option)
@@ -123,6 +262,25 @@ function CMMCScopeContent({ searchQuery }) {
 
       return { ...current, [id]: next };
     });
+  };
+
+  const goToNextSection = (sectionId) => {
+    const sectionIndex = sections.findIndex((section) => section.id === sectionId);
+    const nextSection = sections[sectionIndex + 1];
+    if (!nextSection) return;
+
+    setOpenSections((current) => ({
+      ...current,
+      [sectionId]: false,
+      [nextSection.id]: true,
+    }));
+  };
+
+  const completeSection = (sectionId) => {
+    setOpenSections((current) => ({
+      ...current,
+      [sectionId]: false,
+    }));
   };
 
   return (
@@ -149,6 +307,8 @@ function CMMCScopeContent({ searchQuery }) {
           {visibleSections.map((section) => {
             const sectionAnswered = section.questions.filter((question) => isAnswered(answers[question.id])).length;
             const isOpen = openSections[section.id];
+            const sectionIndex = sections.findIndex((item) => item.id === section.id);
+            const nextSection = sections[sectionIndex + 1];
 
             return (
               <section
@@ -190,6 +350,25 @@ function CMMCScopeContent({ searchQuery }) {
                         onToggleCheckbox={toggleCheckbox}
                       />
                     ))}
+                    <div className="flex justify-end border-t border-slate-100 pt-4">
+                      {nextSection ? (
+                        <button
+                          type="button"
+                          onClick={() => goToNextSection(section.id)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-md bg-[#5b4bea] px-5 text-[13px] font-black text-white shadow-lg shadow-violet-600/20 transition hover:bg-[#4f40dc]"
+                        >
+                          Next: {nextSection.title} {"\u2192"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => completeSection(section.id)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-md bg-[#5b4bea] px-5 text-[13px] font-black text-white shadow-lg shadow-violet-600/20 transition hover:bg-[#4f40dc]"
+                        >
+                          {"\u2713"} Done
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </section>
@@ -204,6 +383,12 @@ function QuestionField({ question, value, onChange, onToggleCheckbox }) {
   return (
     <div>
       <label className="block text-sm font-black text-slate-800">{question.label}</label>
+      {question.reference && (
+        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-violet-500">
+          <span className="h-3 w-3 rounded-sm border border-violet-400 bg-white" />
+          {question.reference}
+        </p>
+      )}
       {question.type === "text" && (
         <input
           type="text"

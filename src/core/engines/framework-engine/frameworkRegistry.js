@@ -20,9 +20,21 @@ import iso27001TasksData from "../../framework-library/iso27001/tasks.json";
 import iso27001MappingsData from "../../framework-library/iso27001/mappings.json";
 import iso27001AIGuidanceData from "../../framework-library/iso27001/ai-guidance.json";
 import iso27001AuditRulesData from "../../framework-library/iso27001/audit-rules.json";
+import cmmcFramework from "../../framework-library/cmmc/framework.json";
+import cmmcControlsData from "../../framework-library/cmmc/controls.json";
+import cmmcRisksData from "../../framework-library/cmmc/risks.json";
+import cmmcTestsData from "../../framework-library/cmmc/tests.json";
+import cmmcPoliciesData from "../../framework-library/cmmc/policies.json";
+import cmmcEvidenceData from "../../framework-library/cmmc/evidence.json";
+import cmmcQuestionnaireData from "../../framework-library/cmmc/questionnaire.json";
+import cmmcTasksData from "../../framework-library/cmmc/tasks.json";
+import cmmcMappingsData from "../../framework-library/cmmc/mappings.json";
+import cmmcAIGuidanceData from "../../framework-library/cmmc/ai-guidance.json";
+import cmmcAuditRulesData from "../../framework-library/cmmc/audit-rules.json";
 
 export const DEFAULT_FRAMEWORK_ID = "soc2-type-ii";
 export const ISO27001_FRAMEWORK_ID = "iso27001-2022";
+export const CMMC_FRAMEWORK_ID = "cmmc-level-2";
 
 const frameworkLibraries = {
   [DEFAULT_FRAMEWORK_ID]: {
@@ -51,6 +63,21 @@ const frameworkLibraries = {
     aiGuidance: iso27001AIGuidanceData.aiGuidance,
     auditRules: iso27001AuditRulesData.auditRules,
   },
+  [CMMC_FRAMEWORK_ID]: {
+    framework: cmmcFramework,
+    controls: cmmcControlsData.controls,
+    controlFamilies: cmmcControlsData.controlFamilies,
+    risks: cmmcRisksData.risks,
+    tests: cmmcTestsData.tests,
+    policies: cmmcPoliciesData.policies,
+    evidence: cmmcEvidenceData.evidenceRequirements,
+    evidenceRequirementsByFamily: cmmcEvidenceData.evidenceRequirementsByFamily,
+    questionnaire: cmmcQuestionnaireData.questionnaireSections,
+    tasks: cmmcTasksData.taskTemplates,
+    mappings: cmmcMappingsData.mappings,
+    aiGuidance: cmmcAIGuidanceData.aiGuidance,
+    auditRules: cmmcAuditRulesData.auditRules,
+  },
 };
 
 const frameworkSlugs = {
@@ -61,6 +88,8 @@ const frameworkSlugs = {
   iso27001: ISO27001_FRAMEWORK_ID,
   "iso-27001-2022": ISO27001_FRAMEWORK_ID,
   "iso27001-2022": ISO27001_FRAMEWORK_ID,
+  cmmc: CMMC_FRAMEWORK_ID,
+  "cmmc-level-2": CMMC_FRAMEWORK_ID,
 };
 
 export function resolveFrameworkId(value = DEFAULT_FRAMEWORK_ID) {

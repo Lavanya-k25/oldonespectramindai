@@ -1,137 +1,19 @@
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
+import {
+  CMMC_FRAMEWORK_ID,
+  getFrameworkLibrary,
+} from "../../../core/engines/framework-engine/frameworkRegistry";
 import { CMMCImplementationLayout, useCMMCWorkspaceFilters } from "../components";
+import {
+  CMMC_CONTROL_WORKFLOW_STATUS_OPTIONS,
+  getCMMCOrganizationProfileSearchText,
+  useCMMCWorkflowState,
+} from "../hooks";
 
-const statuses = ["Not Started", "In Progress", "Completed"];
-
-const domainGroups = [
-  {
-    code: "AC",
-    name: "Access Control",
-    total: 22,
-    controls: [
-      ["3.1.1", "Limit system access to authorized users, processes, and devices.", "Access review export", "AO: user authorization, process authorization"],
-      ["3.1.2", "Limit transactions and functions to authorized users.", "Role matrix and permission screenshots", "AO: transaction limits, privileged functions"],
-      ["3.1.20", "Verify and control connections to external systems.", "Boundary diagram and approval record", "AO: external system connection control"],
-    ],
-  },
-  {
-    code: "AT",
-    name: "Awareness and Training",
-    total: 3,
-    controls: [
-      ["3.2.1", "Ensure managers, users, and administrators understand security risks.", "Security awareness completion report", "AO: role-based risk awareness"],
-      ["3.2.2", "Ensure personnel are trained to carry out assigned security duties.", "Training assignment export", "AO: assigned responsibility training"],
-      ["3.2.3", "Provide awareness training on recognizing and reporting insider threat indicators.", "Insider threat training record", "AO: threat recognition and reporting"],
-    ],
-  },
-  {
-    code: "AU",
-    name: "Audit and Accountability",
-    total: 9,
-    controls: [
-      ["3.3.1", "Create and retain system audit logs and records.", "SIEM retention policy", "AO: event capture and retention"],
-      ["3.3.3", "Review and update logged events.", "Audit event review minutes", "AO: logged event review cadence"],
-      ["3.3.8", "Protect audit information from unauthorized access.", "Audit role permissions", "AO: audit data protection"],
-    ],
-  },
-  {
-    code: "IR",
-    name: "Incident Response",
-    total: 3,
-    controls: [
-      ["3.6.1", "Establish an operational incident-handling capability.", "Incident response plan", "AO: preparation, detection, containment"],
-      ["3.6.2", "Track, document, and report incidents to designated officials.", "Incident ticket sample", "AO: tracking and reporting"],
-      ["3.6.3", "Test the organizational incident response capability.", "Tabletop exercise evidence", "AO: incident response testing"],
-    ],
-  },
-  {
-    code: "MA",
-    name: "Maintenance",
-    total: 6,
-    controls: [
-      ["3.7.1", "Perform maintenance on organizational systems.", "Maintenance log", "AO: approved maintenance activity"],
-      ["3.7.2", "Provide controls on tools, techniques, mechanisms, and personnel used for maintenance.", "Maintenance access procedure", "AO: tool and personnel control"],
-      ["3.7.5", "Require multifactor authentication for nonlocal maintenance sessions.", "Remote maintenance MFA screenshot", "AO: authenticated nonlocal maintenance"],
-    ],
-  },
-  {
-    code: "MP",
-    name: "Media Protection",
-    total: 9,
-    controls: [
-      ["3.8.1", "Protect system media containing CUI.", "Media handling policy", "AO: media storage and access protection"],
-      ["3.8.3", "Sanitize or destroy media containing CUI before disposal or reuse.", "Destruction certificate", "AO: sanitization and disposal"],
-      ["3.8.9", "Protect backup CUI at storage locations.", "Backup encryption evidence", "AO: backup media protection"],
-    ],
-  },
-  {
-    code: "PS",
-    name: "Personnel Security",
-    total: 2,
-    controls: [
-      ["3.9.1", "Screen individuals prior to authorizing access to organizational systems containing CUI.", "Background screening record", "AO: pre-access screening"],
-      ["3.9.2", "Ensure systems containing CUI are protected during and after personnel actions.", "Termination checklist", "AO: transfer and termination protection"],
-    ],
-  },
-  {
-    code: "PE",
-    name: "Physical Protection",
-    total: 6,
-    controls: [
-      ["3.10.1", "Limit physical access to organizational systems and operating environments.", "Badge access report", "AO: facility access limitation"],
-      ["3.10.3", "Escort visitors and monitor visitor activity.", "Visitor log sample", "AO: visitor escort and monitoring"],
-      ["3.10.6", "Enforce safeguarding measures for CUI at alternate work sites.", "Remote work attestation", "AO: alternate work site protection"],
-    ],
-  },
-  {
-    code: "RA",
-    name: "Risk Assessment",
-    total: 3,
-    controls: [
-      ["3.11.1", "Periodically assess risk to organizational operations, assets, and individuals.", "Risk register export", "AO: periodic risk assessment"],
-      ["3.11.2", "Scan for vulnerabilities periodically and when new vulnerabilities are identified.", "Vulnerability scan report", "AO: vulnerability scanning"],
-      ["3.11.3", "Remediate vulnerabilities in accordance with risk assessments.", "Remediation ticket sample", "AO: risk-based remediation"],
-    ],
-  },
-  {
-    code: "CA",
-    name: "Security Assessment",
-    total: 4,
-    controls: [
-      ["3.12.1", "Periodically assess the security controls in organizational systems.", "Control assessment schedule", "AO: control assessment"],
-      ["3.12.2", "Develop and implement plans of action to correct deficiencies.", "POA&M item sample", "AO: deficiency correction planning"],
-      ["3.12.4", "Develop, document, and update system security plans.", "SSP revision history", "AO: SSP maintenance"],
-    ],
-  },
-  {
-    code: "SC",
-    name: "System and Communications Protection",
-    total: 16,
-    controls: [
-      ["3.13.1", "Monitor, control, and protect communications at system boundaries.", "Firewall rule review", "AO: boundary protection"],
-      ["3.13.8", "Implement cryptographic mechanisms to prevent unauthorized disclosure of CUI.", "Encryption configuration", "AO: cryptographic protection"],
-      ["3.13.11", "Employ FIPS-validated cryptography when used to protect CUI.", "FIPS validation evidence", "AO: validated encryption"],
-    ],
-  },
-  {
-    code: "SI",
-    name: "System and Information Integrity",
-    total: 7,
-    controls: [
-      ["3.14.1", "Identify, report, and correct system flaws in a timely manner.", "Patch report", "AO: flaw identification and correction"],
-      ["3.14.2", "Provide protection from malicious code at designated locations.", "Endpoint protection dashboard", "AO: malicious code protection"],
-      ["3.14.6", "Monitor organizational systems for attacks and indicators of potential attacks.", "Alert review evidence", "AO: security monitoring"],
-    ],
-  },
-];
-
-const initialStatuses = domainGroups.reduce((statusById, domain) => {
-  domain.controls.forEach(([id]) => {
-    statusById[`${domain.code}-${id}`] = "Not Started";
-  });
-  return statusById;
-}, {});
+const statuses = CMMC_CONTROL_WORKFLOW_STATUS_OPTIONS;
+const cmmcLibrary = getFrameworkLibrary(CMMC_FRAMEWORK_ID) || emptyFrameworkLibrary();
+const domainGroups = buildDomainGroups(cmmcLibrary);
 
 export default function CMMCOrganizationPage() {
   const { searchQuery, domainFilter, resetVersion, statusFilter } = useCMMCWorkspaceFilters();
@@ -148,29 +30,55 @@ export default function CMMCOrganizationPage() {
 }
 
 function CMMCOrganizationContent({ searchQuery, domainFilter, statusFilter }) {
+  const { organizationProfile, controlWorkflowFields, updateControlWorkflowStatus } = useCMMCWorkflowState();
   const [openDomains, setOpenDomains] = useState({ AC: true });
-  const [controlStatuses, setControlStatuses] = useState(initialStatuses);
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const organizationProfileSearchText = useMemo(
+    () => getCMMCOrganizationProfileSearchText(organizationProfile),
+    [organizationProfile]
+  );
+  const workflowDomainGroups = useMemo(
+    () => applyControlWorkflowFields(domainGroups, controlWorkflowFields),
+    [controlWorkflowFields]
+  );
 
   const statusCounts = useMemo(() => {
-    return Object.values(controlStatuses).reduce(
-      (counts, status) => ({ ...counts, [status]: counts[status] + 1 }),
+    return workflowDomainGroups.flatMap((domain) => domain.controls.map((control) => control.status)).reduce(
+      (counts, status) => {
+        if (counts[status] !== undefined) counts[status] += 1;
+        return counts;
+      },
       { "Not Started": 0, "In Progress": 0, Completed: 0 }
     );
-  }, [controlStatuses]);
-  const notStartedTotal = 110 - statusCounts.Completed - statusCounts["In Progress"];
+  }, [workflowDomainGroups]);
+  const notStartedTotal = statusCounts["Not Started"];
   const visibleDomains = useMemo(() => {
-    return domainGroups
+    return workflowDomainGroups
       .map((domain) => {
         const domainMatches =
           !normalizedSearch ||
           `${domain.code} ${domain.name}`.toLowerCase().includes(normalizedSearch);
-        const controls = domain.controls.filter(([id, description, evidence, objective]) => {
-          const controlKey = `${domain.code}-${id}`;
-          const status = controlStatuses[controlKey];
+        const workflowMatches = Boolean(
+          normalizedSearch && organizationProfileSearchText.includes(normalizedSearch)
+        );
+        const controls = domain.controls.filter((control) => {
+          const status = control.status || "";
           const matchesSearch =
             domainMatches ||
-            [id, description, evidence, objective, status, domain.code, domain.name]
+            workflowMatches ||
+            [
+              control.id,
+              control.description,
+              control.evidence,
+              control.objective,
+              control.ownerCollector,
+              control.dateCollected,
+              control.sourceSystemTool,
+              control.notesGaps,
+              status,
+              domain.code,
+              domain.name,
+            ]
               .join(" ")
               .toLowerCase()
               .includes(normalizedSearch);
@@ -183,10 +91,10 @@ function CMMCOrganizationContent({ searchQuery, domainFilter, statusFilter }) {
         return { ...domain, controls };
       })
       .filter((domain) => domain.controls.length > 0);
-  }, [controlStatuses, domainFilter, normalizedSearch, statusFilter]);
+  }, [domainFilter, normalizedSearch, organizationProfileSearchText, statusFilter, workflowDomainGroups]);
 
   const updateStatus = (controlKey, status) => {
-    setControlStatuses((current) => ({ ...current, [controlKey]: status }));
+    updateControlWorkflowStatus(controlKey, status);
   };
 
   return (
@@ -202,7 +110,7 @@ function CMMCOrganizationContent({ searchQuery, domainFilter, statusFilter }) {
           {visibleDomains.map((domain) => {
             const isOpen = Boolean(openDomains[domain.code]);
             const completedCount = domain.controls.filter(
-              ([id]) => controlStatuses[`${domain.code}-${id}`] === "Completed"
+              (control) => control.status === "Completed"
             ).length;
 
             return (
@@ -240,9 +148,9 @@ function CMMCOrganizationContent({ searchQuery, domainFilter, statusFilter }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {domain.controls.map(([id, description, evidence, objective]) => {
-                          const controlKey = `${domain.code}-${id}`;
-                          const status = controlStatuses[controlKey];
+                        {domain.controls.map((control) => {
+                          const controlKey = control.key;
+                          const status = control.status || "";
 
                           return (
                             <tr key={controlKey} className="align-top transition hover:bg-slate-50/70">
@@ -250,22 +158,23 @@ function CMMCOrganizationContent({ searchQuery, domainFilter, statusFilter }) {
                                 <input
                                   type="checkbox"
                                   checked={status === "Completed"}
-                                  onChange={(event) => updateStatus(controlKey, event.target.checked ? "Completed" : "Not Started")}
+                                  onChange={(event) => updateStatus(control.workflowKey, event.target.checked ? "Completed" : "Not Started")}
                                   className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
                                 />
                               </td>
-                              <td className="px-4 py-3 font-black text-violet-700">{id}</td>
-                              <td className="px-4 py-3 font-semibold leading-5 text-slate-700">{description}</td>
-                              <td className="px-4 py-3 text-xs font-semibold leading-5 text-violet-600">{evidence}</td>
-                              <td className="px-4 py-3 text-xs font-semibold leading-5 text-slate-500">{objective}</td>
+                              <td className="px-4 py-3 font-black text-violet-700">{control.id}</td>
+                              <td className="px-4 py-3 font-semibold leading-5 text-slate-700">{control.description}</td>
+                              <td className="px-4 py-3 text-xs font-semibold leading-5 text-violet-600">{control.evidence}</td>
+                              <td className="px-4 py-3 text-xs font-semibold leading-5 text-slate-500">{control.objective}</td>
                               <td className="px-4 py-3">
                                 <select
                                   value={status}
-                                  onChange={(event) => updateStatus(controlKey, event.target.value)}
+                                  onChange={(event) => updateStatus(control.workflowKey, event.target.value)}
                                   className="h-8 w-full rounded border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
                                 >
+                                  <option value=""></option>
                                   {statuses.map((statusOption) => (
-                                    <option key={statusOption}>{statusOption}</option>
+                                    <option key={statusOption} value={statusOption}>{statusOption}</option>
                                   ))}
                                 </select>
                               </td>
@@ -291,4 +200,88 @@ function StatusCard({ value, label, tone }) {
       <p className="mt-1 text-xs font-black uppercase text-slate-400">{label}</p>
     </div>
   );
+}
+
+function applyControlWorkflowFields(domainGroups, controlWorkflowFields = {}) {
+  return domainGroups.map((domain) => ({
+    ...domain,
+    controls: domain.controls.map((control) => ({
+      ...control,
+      status: workflowFieldValue(controlWorkflowFields[control.workflowKey], "status", control.status),
+    })),
+  }));
+}
+
+function workflowFieldValue(fieldOverrides, field, fallback) {
+  return Object.prototype.hasOwnProperty.call(fieldOverrides || {}, field) ? fieldOverrides[field] : fallback;
+}
+
+function buildDomainGroups(library) {
+  const evidenceById = new Map((library.evidence || []).map((item) => [item.id, item]));
+  const mappingByControlId = new Map((library.mappings || []).map((mapping) => [mapping.controlId, mapping]));
+  const domainsByCode = new Map();
+
+  (library.controls || []).forEach((control) => {
+    const controlId = control.controlId || control["Control ID"] || control.id || "";
+    const controlFamily = control.controlFamily || control["Control Family"] || "";
+    const { code, name } = parseControlFamily(controlFamily, controlId);
+    const mapping = mappingByControlId.get(controlId) || {};
+    const evidenceItems = (mapping.evidenceRequirementIds || mapping.evidenceIds || [])
+      .map((evidenceId) => evidenceById.get(evidenceId))
+      .filter(Boolean);
+
+    if (!domainsByCode.has(code)) {
+      domainsByCode.set(code, {
+        code,
+        name,
+        total: 0,
+        controls: [],
+      });
+    }
+
+    const domain = domainsByCode.get(code);
+    domain.controls.push({
+      key: `${code}-${controlId}`,
+      workflowKey: controlId,
+      id: controlId,
+      description: control.controlRequirement || control["Control Requirement"] || "",
+      evidence: joinedEvidenceField(evidenceItems, "evidenceToRequest", "Evidence to Request"),
+      objective: joinedEvidenceField(evidenceItems, "publicNotesUse", "Public Notes / Use"),
+      status: firstEvidenceField(evidenceItems, "evidenceStatus", "Evidence Status"),
+      ownerCollector: firstEvidenceField(evidenceItems, "ownerCollector", "Owner / Collector"),
+      dateCollected: firstEvidenceField(evidenceItems, "dateCollected", "Date Collected"),
+      sourceSystemTool: firstEvidenceField(evidenceItems, "sourceSystemTool", "Source System / Tool"),
+      notesGaps: firstEvidenceField(evidenceItems, "notesGaps", "Notes / Gaps"),
+    });
+    domain.total = domain.controls.length;
+  });
+
+  return Array.from(domainsByCode.values());
+}
+
+function parseControlFamily(controlFamily, controlId) {
+  const [familyCode, ...familyNameParts] = controlFamily.split(" - ");
+  const code = familyCode || controlId.split(".")[0] || "";
+  const name = familyNameParts.join(" - ") || controlFamily || code;
+  return { code, name };
+}
+
+function joinedEvidenceField(evidenceItems, camelCaseField, sourceField) {
+  if (!evidenceItems.length) return "";
+  return evidenceItems
+    .map((item) => item[camelCaseField] ?? item[sourceField] ?? "")
+    .join("\n");
+}
+
+function firstEvidenceField(evidenceItems, camelCaseField, sourceField) {
+  if (!evidenceItems.length) return "";
+  return evidenceItems[0]?.[camelCaseField] ?? evidenceItems[0]?.[sourceField] ?? "";
+}
+
+function emptyFrameworkLibrary() {
+  return {
+    controls: [],
+    evidence: [],
+    mappings: [],
+  };
 }

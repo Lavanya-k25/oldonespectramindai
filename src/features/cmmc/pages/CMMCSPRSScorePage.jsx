@@ -1,19 +1,13 @@
 import { useMemo, useState } from "react";
+import {
+  CMMC_FRAMEWORK_ID,
+  getFrameworkLibrary,
+} from "../../../core/engines/framework-engine/frameworkRegistry";
 import { CMMCImplementationLayout, useCMMCWorkspaceFilters } from "../components";
+import { useCMMCSPRSCalculation } from "../hooks";
 
-const remediations = [
-  ["3.1.1", "5", "Limit system access to only authorized users, processes, and devices.", "AC", "Not Started"],
-  ["3.1.2", "5", "Restrict what each user can do based on their role, no more access than needed.", "AC", "Not Started"],
-  ["3.1.12", "5", "Monitor and control every remote access session.", "AC", "Not Started"],
-  ["3.1.13", "5", "Encrypt remote access sessions (TLS, SSH, or equivalent).", "AC", "Not Started"],
-  ["3.1.16", "5", "Explicitly authorize wireless connections before allowing them.", "AC", "Not Started"],
-  ["3.1.17", "5", "Secure all wireless access with authentication and encryption (WPA2/WPA3 minimum).", "AC", "Not Started"],
-  ["3.1.18", "5", "Control which mobile devices can connect to organizational systems.", "AC", "Not Started"],
-  ["3.2.1", "5", "Ensure all personnel understand security risks associated with their roles.", "AT", "Not Started"],
-  ["3.2.2", "5", "Train staff to carry out their assigned information security responsibilities.", "AT", "Not Started"],
-  ["3.3.1", "5", "Create and retain audit logs long enough to support investigations.", "AU", "Not Started"],
-  ["3.3.5", "5", "Correlate logs across systems to detect patterns of suspicious activity.", "AU", "Not Started"],
-];
+const cmmcLibrary = getFrameworkLibrary(CMMC_FRAMEWORK_ID) || emptyFrameworkLibrary();
+const remediations = buildRemediations(cmmcLibrary);
 
 export default function CMMCSPRSScorePage() {
   const { searchQuery, domainFilter, resetVersion, statusFilter } = useCMMCWorkspaceFilters();
@@ -30,6 +24,7 @@ export default function CMMCSPRSScorePage() {
 }
 
 function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
+  useCMMCSPRSCalculation();
   const [partialCredit, setPartialCredit] = useState({
     "3.5.3": "No MFA implemented (-5 pts)",
     "3.13.11": "No encryption employed (-5 pts)",
@@ -37,10 +32,10 @@ function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleRemediations = useMemo(
     () =>
-      remediations.filter(([control, points, requirement, domain, status]) => {
+      remediations.filter(([control, points, requirement, domain, status, evidence]) => {
         const matchesSearch =
           !normalizedSearch ||
-          [control, points, requirement, domain, status].join(" ").toLowerCase().includes(normalizedSearch);
+          [control, points, requirement, domain, status, evidence].join(" ").toLowerCase().includes(normalizedSearch);
         const matchesDomain = domainFilter === "all" || domainFilter === domain;
         const matchesStatus = statusFilter === "All" || statusFilter === status;
 
@@ -156,6 +151,40 @@ function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
         </section>
     </div>
   );
+}
+
+function buildRemediations(library) {
+  const controlsById = new Map((library.controls || []).map((control) => [control.controlId || control["Control ID"] || control.id, control]));
+  const evidenceById = new Map((library.evidence || []).map((evidence) => [evidence.id, evidence]));
+
+  return (library.mappings || []).map((mapping) => {
+    const control = controlsById.get(mapping.controlId) || {};
+    const evidenceIds = mapping.evidenceRequirementIds || mapping.evidenceIds || [];
+    const evidence = evidenceById.get(evidenceIds[0]) || {};
+    const controlId = mapping.controlId || control.controlId || control["Control ID"] || evidence.controlId || "";
+    const controlFamily = control.controlFamily || control["Control Family"] || evidence.controlFamily || evidence["Control Family"] || "";
+
+    return [
+      controlId,
+      "5",
+      control.controlRequirement || control["Control Requirement"] || evidence["Control Requirement"] || "",
+      parseControlDomain(controlFamily, controlId),
+      evidence.evidenceStatus || evidence["Evidence Status"] || "",
+      evidence.evidenceToRequest || evidence["Evidence to Request"] || "",
+    ];
+  });
+}
+
+function parseControlDomain(controlFamily, controlId) {
+  return controlFamily.split(" - ")[0] || controlId.split(".")[0] || "";
+}
+
+function emptyFrameworkLibrary() {
+  return {
+    controls: [],
+    evidence: [],
+    mappings: [],
+  };
 }
 
 function ScoreBox({ value, label, tone = "text-white" }) {

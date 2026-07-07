@@ -1,6 +1,11 @@
 import { FileText, Pin, Printer, ScrollText } from "lucide-react";
 import { useMemo, useState } from "react";
+import {
+  CMMC_FRAMEWORK_ID,
+  getFrameworkLibrary,
+} from "../../../core/engines/framework-engine/frameworkRegistry";
 import { CMMCImplementationLayout, useCMMCWorkspaceFilters } from "../components";
+import { useCMMCWorkflowState } from "../hooks";
 
 const tabs = [
   { id: "ssp", label: "System Security Plan", icon: FileText },
@@ -8,53 +13,35 @@ const tabs = [
   { id: "policies", label: "Policy Documents", icon: ScrollText },
 ];
 
-const policyDocuments = [
-  ["3.1", "AC", "Access Control", "Access Control Policy", "Controls who can access your systems and CUI. Assessors verify you have formal rules governing access.", "22"],
-  ["3.2", "AT", "Awareness & Training", "Awareness and Training Policy", "The most common source of breaches is human error. Assessors verify personnel know how to protect CUI.", "3"],
-  ["3.3", "AU", "Audit & Accountability", "Audit and Accountability Policy", "You cannot investigate an incident you did not log. Assessors verify that you collect audit records.", "9"],
-  ["3.4", "CM", "Configuration Management", "Configuration Management Policy", "Misconfigured systems are the number one attack vector. Assessors look for controlled baselines.", "9"],
-  ["3.5", "IA", "Identification & Authentication", "Identification and Authentication Policy", "Identity is your first line of defense. Assessors verify password and MFA requirements.", "11"],
-  ["3.6", "IR", "Incident Response", "Incident Response Plan", "Under DFARS 252.204-7012, you must report cyber incidents to DoD within 72 hours.", "3"],
-  ["3.7", "MA", "Maintenance", "Maintenance Policy", "Maintenance technicians and remote vendors are a common entry point for attackers.", "6"],
-  ["3.8", "MP", "Media Protection", "Media Protection Policy", "Portable media, USB drives, laptops, and printed CUI need defined handling rules.", "9"],
-  ["3.9", "PS", "Personnel Security", "Personnel Security Policy", "Insider threats are a primary concern for DoD contractors.", "2"],
-  ["3.10", "PE", "Physical Protection", "Physical Protection Policy", "Physical access to systems is logical access. Assessors verify facility controls.", "6"],
-  ["3.11", "RA", "Risk Assessment", "Risk Assessment Policy", "You cannot manage risk you have not identified. Assessors verify periodic assessments.", "3"],
-  ["3.12", "CA", "Security Assessment", "Security Assessment Policy", "CMMC Level 2 requires ongoing control assessment and corrective action.", "4"],
-  ["3.13", "SC", "Systems & Comms Protection", "System and Communications Protection Policy", "This is one of the largest and most technically demanding control families.", "16"],
-  ["3.14", "SI", "System & Info Integrity", "System and Information Integrity Policy", "This family covers patching, malware protection, monitoring, and security alerting.", "7"],
-];
-
-const poamRows = [
-  ["POAM-001", "3.1.1", "5", "AC", "Limit system access to only authorized users, processes, and devices."],
-  ["POAM-002", "3.1.2", "5", "AC", "Restrict what each user can do based on their role, no more access than needed."],
-  ["POAM-003", "3.1.12", "5", "AC", "Monitor and control every remote access session."],
-  ["POAM-004", "3.1.13", "5", "AC", "Encrypt remote access sessions (TLS, SSH, or equivalent)."],
-  ["POAM-005", "3.1.16", "5", "AC", "Explicitly authorize wireless connections before allowing them."],
-  ["POAM-006", "3.1.17", "5", "AC", "Secure all wireless access with authentication and encryption."],
-];
-
-const sspControls = [
-  ["AC", "Access Control", "3.1.1", "5 pt", "Limit system access to only authorized users, processes, and devices."],
-  ["AC", "Access Control", "3.1.2", "5 pt", "Restrict system transactions and functions to authorized users."],
-  ["AT", "Awareness and Training", "3.2.1", "5 pt", "Ensure personnel understand security risks associated with their roles."],
-];
+const cmmcLibrary = getFrameworkLibrary(CMMC_FRAMEWORK_ID) || emptyFrameworkLibrary();
+const evidenceRows = buildEvidenceRows(cmmcLibrary);
 
 const initialSspForm = {
-  organizationName: "",
-  systemName: "",
   owner: "",
-  version: "1.0",
-  date: "2026-06-30",
-  currentSprs: "-203",
-  scope: "",
-  environment: "",
+  version: "",
+  date: "",
+  currentSprs: "",
   purpose: "",
 };
 
-const initialPoamNotes = poamRows.reduce((notes, [id]) => {
-  notes[id] = { weakness: "", owner: "", date: "", resources: "", milestones: "", status: "Not Started" };
-  return notes;
+const sspWorkflowAnswerIds = {
+  organizationName: "organizationName",
+  systemName: "systemName",
+  scope: "systemBoundaryScope",
+  environment: "systemEnvironmentDescription",
+};
+
+const poamWorkflowFields = {
+  weakness: "notesGaps",
+  owner: "ownerCollector",
+  date: "dateCollected",
+  resources: "sourceSystemTool",
+  status: "evidenceStatus",
+};
+
+const initialPoamMilestones = evidenceRows.reduce((milestones, row) => {
+  milestones[row.key] = row.evidence;
+  return milestones;
 }, {});
 
 export default function CMMCEvidencePage() {
@@ -72,62 +59,154 @@ export default function CMMCEvidencePage() {
 }
 
 function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
+  const {
+    scopeAnswers,
+    organizationProfile,
+    controlWorkflowFields,
+    evidenceWorkflowFields,
+    updateScopeAnswer,
+    updateControlWorkflowStatus,
+    updateEvidenceWorkflowField,
+  } = useCMMCWorkflowState();
   const [activeTab, setActiveTab] = useState("ssp");
   const [sspForm, setSspForm] = useState(initialSspForm);
-  const [controlNotes, setControlNotes] = useState({});
-  const [poamNotes, setPoamNotes] = useState(initialPoamNotes);
+  const [poamMilestones, setPoamMilestones] = useState(initialPoamMilestones);
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const workflowSspForm = useMemo(
+    () => buildWorkflowSspForm(organizationProfile, scopeAnswers),
+    [organizationProfile, scopeAnswers]
+  );
+  const sspFormValues = useMemo(
+    () => ({ ...sspForm, ...workflowSspForm }),
+    [sspForm, workflowSspForm]
+  );
+  const workflowEvidenceRows = useMemo(
+    () =>
+      evidenceRows.map((row) =>
+        applyEvidenceWorkflowFields(row, evidenceWorkflowFields[row.key], controlWorkflowFields[row.controlId])
+      ),
+    [controlWorkflowFields, evidenceWorkflowFields]
+  );
+  const evidenceMetrics = useMemo(
+    () => buildEvidenceMetrics(workflowEvidenceRows),
+    [workflowEvidenceRows]
+  );
+  const poamNotes = useMemo(
+    () => buildPoamNotes(workflowEvidenceRows, poamMilestones),
+    [poamMilestones, workflowEvidenceRows]
+  );
 
   const visiblePolicies = useMemo(
     () =>
-      policyDocuments.filter(([section, domain, family, title, description]) => {
-        const matchesDomain = domainFilter === "all" || domainFilter === domain;
+      workflowEvidenceRows.filter((row) => {
+        const matchesDomain = domainFilter === "all" || domainFilter === row.domain;
         const matchesSearch =
           !normalizedSearch ||
-          [section, domain, family, title, description].join(" ").toLowerCase().includes(normalizedSearch);
-
-        return matchesDomain && matchesSearch;
-      }),
-    [domainFilter, normalizedSearch]
-  );
-
-  const visiblePoamRows = useMemo(
-    () =>
-      poamRows.filter(([id, control, points, domain, requirement]) => {
-        const rowStatus = poamNotes[id]?.status || "Not Started";
-        const matchesDomain = domainFilter === "all" || domainFilter === domain;
-        const matchesStatus = statusFilter === "All" || statusFilter === rowStatus;
-        const matchesSearch =
-          !normalizedSearch ||
-          [id, control, points, domain, requirement, rowStatus].join(" ").toLowerCase().includes(normalizedSearch);
-
-        return matchesDomain && matchesStatus && matchesSearch;
-      }),
-    [domainFilter, normalizedSearch, poamNotes, statusFilter]
-  );
-
-  const visibleSspControls = useMemo(
-    () =>
-      sspControls.filter(([domain, family, control, points, requirement]) => {
-        const matchesDomain = domainFilter === "all" || domainFilter === domain;
-        const matchesSearch =
-          !normalizedSearch ||
-          [domain, family, control, points, requirement, controlNotes[control] || ""]
+          [
+            row.section,
+            row.domain,
+            row.family,
+            row.controlId,
+            row.requirement,
+            row.evidence,
+            row.publicNotesUse,
+            row.evidenceStatus,
+            row.ownerCollector,
+            row.dateCollected,
+            row.sourceSystemTool,
+            row.notesGaps,
+          ]
             .join(" ")
             .toLowerCase()
             .includes(normalizedSearch);
 
         return matchesDomain && matchesSearch;
       }),
-    [controlNotes, domainFilter, normalizedSearch]
+    [domainFilter, normalizedSearch, workflowEvidenceRows]
+  );
+
+  const visiblePoamRows = useMemo(
+    () =>
+      workflowEvidenceRows.filter((row) => {
+        const rowStatus = row.evidenceStatus;
+        const matchesDomain = domainFilter === "all" || domainFilter === row.domain;
+        const matchesStatus = statusFilter === "All" || statusFilter === rowStatus;
+        const matchesSearch =
+          !normalizedSearch ||
+          [
+            row.poamId,
+            row.controlId,
+            row.domain,
+            row.requirement,
+            row.evidence,
+            row.publicNotesUse,
+            rowStatus,
+            poamNotes[row.key]?.weakness,
+            poamNotes[row.key]?.owner,
+            poamNotes[row.key]?.date,
+            poamNotes[row.key]?.resources,
+            poamNotes[row.key]?.milestones,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedSearch);
+
+        return matchesDomain && matchesStatus && matchesSearch;
+      }),
+    [domainFilter, normalizedSearch, poamNotes, statusFilter, workflowEvidenceRows]
+  );
+
+  const visibleSspControls = useMemo(
+    () =>
+      workflowEvidenceRows.filter((row) => {
+        const matchesDomain = domainFilter === "all" || domainFilter === row.domain;
+        const matchesSearch =
+          !normalizedSearch ||
+          [
+            row.domain,
+            row.family,
+            row.controlId,
+            row.requirement,
+            row.evidence,
+            row.publicNotesUse,
+            row.evidenceStatus,
+            row.notesGaps,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedSearch);
+
+        return matchesDomain && matchesSearch;
+      }),
+    [domainFilter, normalizedSearch, workflowEvidenceRows]
   );
 
   const updateSspForm = (field, value) => {
+    const workflowAnswerId = sspWorkflowAnswerIds[field];
+    if (workflowAnswerId) {
+      updateScopeAnswer(workflowAnswerId, value);
+      return;
+    }
+
     setSspForm((current) => ({ ...current, [field]: value }));
   };
 
   const updatePoamNote = (id, field, value) => {
-    setPoamNotes((current) => ({ ...current, [id]: { ...current[id], [field]: value } }));
+    const workflowField = poamWorkflowFields[field];
+    if (workflowField) {
+      updateEvidenceWorkflowField(id, workflowField, value);
+      if (field === "status") {
+        const controlId = workflowEvidenceRows.find((row) => row.key === id)?.controlId;
+        if (controlId) {
+          updateControlWorkflowStatus(controlId, value);
+        }
+      }
+      return;
+    }
+
+    if (field === "milestones") {
+      setPoamMilestones((current) => ({ ...current, [id]: value }));
+    }
   };
 
   return (
@@ -155,22 +234,21 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
 
         {activeTab === "ssp" && (
           <SSPView
-            form={sspForm}
+            form={sspFormValues}
             onChange={updateSspForm}
             controls={visibleSspControls}
-            controlNotes={controlNotes}
-            onNoteChange={(control, value) => setControlNotes((current) => ({ ...current, [control]: value }))}
+            onNoteChange={(evidenceKey, value) => updateEvidenceWorkflowField(evidenceKey, "notesGaps", value)}
           />
         )}
         {activeTab === "poam" && (
-          <POAMView rows={visiblePoamRows} notes={poamNotes} onChange={updatePoamNote} />
+          <POAMView rows={visiblePoamRows} notes={poamNotes} onChange={updatePoamNote} metrics={evidenceMetrics} organizationName={organizationProfile.organizationName} />
         )}
-        {activeTab === "policies" && <PolicyView policies={visiblePolicies} />}
+        {activeTab === "policies" && <PolicyView policies={visiblePolicies} metrics={evidenceMetrics} organizationName={organizationProfile.organizationName} />}
     </section>
   );
 }
 
-function SSPView({ form, onChange, controls, controlNotes, onNoteChange }) {
+function SSPView({ form, onChange, controls, onNoteChange }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -205,36 +283,36 @@ function SSPView({ form, onChange, controls, controlNotes, onNoteChange }) {
 
       <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-slate-600">
         Tip: Fill in each "Implementation Description" below to document how your organization meets the control.
-        <span className="font-black text-red-500"> 110 controls are not yet marked complete</span> - those will appear as POA&M items.
+        <span className="font-black text-red-500"> {controls.length} mapped evidence requirements are loaded from the framework library</span>
       </div>
 
       <div className="space-y-3">
-        {controls.map(([domain, family, control, points, requirement]) => (
-          <article key={control} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        {controls.map((row) => (
+          <article key={row.key} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between bg-violet-600 px-4 py-3 text-white">
               <div className="flex items-center gap-3">
-                <span className="rounded bg-white/20 px-2 py-1 text-xs font-black">{domain}</span>
-                <span className="font-black">{family}</span>
+                <span className="rounded bg-white/20 px-2 py-1 text-xs font-black">{row.domain}</span>
+                <span className="font-black">{row.family}</span>
               </div>
-              <span className="text-xs font-bold">0/22 implemented</span>
+              <span className="text-xs font-bold">{row.evidenceStatus}</span>
             </div>
             <div className="space-y-3 p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="font-black text-violet-700">{control}</p>
-                <span className="w-fit rounded bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">Not Implemented</span>
+                <p className="font-black text-violet-700">{row.controlId}</p>
+                <span className="w-fit rounded bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{row.evidenceStatus}</span>
               </div>
               <p className="font-semibold text-slate-700">
-                <span className="mr-2 rounded bg-red-50 px-2 py-1 text-xs font-black text-red-500">{points}</span>
-                {requirement}
+                <span className="mr-2 rounded bg-red-50 px-2 py-1 text-xs font-black text-red-500">{row.sourceSystemTool}</span>
+                {row.requirement}
               </p>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Evidence Required: Access control policy, user account listing, authorized device inventory, access request/approval records
+                Evidence Required: {row.evidence}
               </p>
               <TextArea
                 label="Implementation Description"
-                value={controlNotes[control] || ""}
+                value={row.notesGaps}
                 placeholder="Describe how this control is implemented in your environment. Include tools, processes, responsible personnel, and specific configurations..."
-                onChange={(value) => onNoteChange(control, value)}
+                onChange={(value) => onNoteChange(row.key, value)}
               />
             </div>
           </article>
@@ -244,7 +322,9 @@ function SSPView({ form, onChange, controls, controlNotes, onNoteChange }) {
   );
 }
 
-function POAMView({ rows, notes, onChange }) {
+function POAMView({ rows, notes, onChange, metrics, organizationName }) {
+  const displayOrganizationName = organizationName || "[Organization Name]";
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -256,15 +336,15 @@ function POAMView({ rows, notes, onChange }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <POAMMetric value="110" label="Open Items" tone="text-red-500" />
-        <POAMMetric value="44" label="Critical (5-pt)" tone="text-red-500" />
-        <POAMMetric value="14" label="Important (3-pt)" tone="text-amber-500" />
-        <POAMMetric value="313" label="SPRS Pts at Risk" tone="text-violet-600" />
+        <POAMMetric value={metrics.evidenceCount} label="Evidence Items" tone="text-red-500" />
+        <POAMMetric value={metrics.controlCount} label="Mapped Controls" tone="text-red-500" />
+        <POAMMetric value={metrics.familyCount} label="Control Families" tone="text-amber-500" />
+        <POAMMetric value={metrics.blankStatusCount} label="Blank Status" tone="text-violet-600" />
       </div>
 
       <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
         <h2 className="p-4 text-lg font-black text-slate-900">
-          POA&M - [Organization Name] · NIST SP 800-171 Rev 2 · Assessment Date: 2026-06-30
+          POA&M - {displayOrganizationName} - NIST SP 800-171 Rev 2 - Assessment Date:
         </h2>
         <table className="w-full min-w-[1040px] text-left text-sm">
           <thead className="border-y border-slate-100 bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-400">
@@ -278,34 +358,35 @@ function POAMView({ rows, notes, onChange }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map(([id, control, points, domain, requirement]) => {
-              const note = notes[id];
+            {rows.map((row) => {
+              const note = notes[row.key] || {};
 
               return (
-                <tr key={id} className="align-top">
+                <tr key={row.key} className="align-top">
                   <td className="px-4 py-4 font-black text-violet-700">
-                    {id}
+                    {row.poamId}
                     <br />
-                    {control}
+                    {row.controlId}
                     <div className="mt-2 flex gap-1">
-                      <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-500">{points}</span>
-                      <span className="rounded bg-violet-100 px-2 py-1 text-xs text-violet-700">{domain}</span>
+                      <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-500">{row.sourceSystemTool}</span>
+                      <span className="rounded bg-violet-100 px-2 py-1 text-xs text-violet-700">{row.domain}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 font-semibold text-slate-700">{requirement}</td>
+                  <td className="px-4 py-4 font-semibold text-slate-700">{row.requirement}</td>
                   <td className="px-4 py-4">
-                    <textarea value={note.weakness} onChange={(event) => onChange(id, "weakness", event.target.value)} placeholder={`${requirement} - This control has not been fully implemented.`} rows={3} className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
+                    <textarea value={note.weakness || ""} onChange={(event) => onChange(row.key, "weakness", event.target.value)} placeholder="" rows={3} className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
                   </td>
                   <td className="space-y-2 px-4 py-4">
-                    <input value={note.owner} onChange={(event) => onChange(id, "owner", event.target.value)} placeholder="Name / Role" className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
-                    <input type="date" value={note.date} onChange={(event) => onChange(id, "date", event.target.value)} className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
+                    <input value={note.owner || ""} onChange={(event) => onChange(row.key, "owner", event.target.value)} placeholder="" className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
+                    <input type="date" value={note.date || ""} onChange={(event) => onChange(row.key, "date", event.target.value)} className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
                   </td>
                   <td className="space-y-2 px-4 py-4">
-                    <input value={note.resources} onChange={(event) => onChange(id, "resources", event.target.value)} placeholder="Budget, tools, personnel..." className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
-                    <input value={note.milestones} onChange={(event) => onChange(id, "milestones", event.target.value)} placeholder="Key milestones..." className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
+                    <input value={note.resources || ""} onChange={(event) => onChange(row.key, "resources", event.target.value)} placeholder="" className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
+                    <input value={note.milestones || ""} onChange={(event) => onChange(row.key, "milestones", event.target.value)} placeholder="" className="h-9 w-full rounded border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
                   </td>
                   <td className="px-4 py-4">
-                    <select value={note.status} onChange={(event) => onChange(id, "status", event.target.value)} className="h-9 rounded border border-slate-200 px-2 text-sm font-bold text-slate-600">
+                    <select value={note.status || ""} onChange={(event) => onChange(row.key, "status", event.target.value)} className="h-9 rounded border border-slate-200 px-2 text-sm font-bold text-slate-600">
+                      <option value=""></option>
                       <option>Not Started</option>
                       <option>In Progress</option>
                       <option>Completed</option>
@@ -321,7 +402,9 @@ function POAMView({ rows, notes, onChange }) {
   );
 }
 
-function PolicyView({ policies }) {
+function PolicyView({ policies, metrics, organizationName }) {
+  const displayOrganizationName = organizationName || "[Organization Name]";
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -333,34 +416,131 @@ function PolicyView({ policies }) {
       </div>
       <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-black text-slate-900">Audit Package Policy Status - [Organization Name]</h2>
+          <h2 className="text-lg font-black text-slate-900">Audit Package Policy Status - {displayOrganizationName}</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">
             A C3PAO assessor will verify that each policy document exists, is approved, and has been communicated to personnel.
           </p>
         </div>
         <div className="flex gap-8 text-center">
-          <StatusStat value="0" label="Approved" tone="text-emerald-500" />
-          <StatusStat value="14" label="Draft" tone="text-amber-500" />
-          <StatusStat value="0" label="N/A" tone="text-slate-400" />
+          <StatusStat value={metrics.evidenceCount} label="Evidence" tone="text-emerald-500" />
+          <StatusStat value={metrics.blankStatusCount} label="Blank Status" tone="text-amber-500" />
+          <StatusStat value={metrics.familyCount} label="Families" tone="text-slate-400" />
         </div>
       </section>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {policies.map(([section, domain, family, title, description, count]) => (
-          <article key={`${domain}-${title}`} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        {policies.map((row) => (
+          <article key={`${row.domain}-${row.controlId}`} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-              {section} - {family}
+              {row.section} - {row.family}
             </p>
-            <h2 className="mt-2 text-lg font-black text-slate-900">{title}</h2>
-            <p className="mt-3 line-clamp-3 min-h-16 text-sm font-semibold leading-6 text-slate-500">{description}</p>
+            <h2 className="mt-2 text-lg font-black text-slate-900">{row.controlId}</h2>
+            <p className="mt-3 line-clamp-3 min-h-16 text-sm font-semibold leading-6 text-slate-500">{row.evidence}</p>
             <div className="mt-4 flex items-center justify-between">
-              <span className="rounded bg-amber-50 px-2 py-1 text-xs font-black text-amber-700">Draft</span>
-              <span className="text-xs font-bold text-slate-400">{count} controls</span>
+              <span className="rounded bg-amber-50 px-2 py-1 text-xs font-black text-amber-700">{row.evidenceStatus}</span>
+              <span className="text-xs font-bold text-slate-400">{row.sourceSystemTool}</span>
             </div>
           </article>
         ))}
       </div>
     </div>
   );
+}
+
+function applyEvidenceWorkflowFields(row, fieldOverrides = {}, controlFieldOverrides = {}) {
+  const evidenceStatus = workflowFieldValue(fieldOverrides, "evidenceStatus", row.evidenceStatus);
+
+  return {
+    ...row,
+    evidenceStatus: workflowFieldValue(controlFieldOverrides, "status", evidenceStatus),
+    ownerCollector: workflowFieldValue(fieldOverrides, "ownerCollector", row.ownerCollector),
+    dateCollected: workflowFieldValue(fieldOverrides, "dateCollected", row.dateCollected),
+    sourceSystemTool: workflowFieldValue(fieldOverrides, "sourceSystemTool", row.sourceSystemTool),
+    notesGaps: workflowFieldValue(fieldOverrides, "notesGaps", row.notesGaps),
+  };
+}
+
+function workflowFieldValue(fieldOverrides, field, fallback) {
+  return Object.prototype.hasOwnProperty.call(fieldOverrides || {}, field) ? fieldOverrides[field] : fallback;
+}
+
+function buildPoamNotes(rows, milestones) {
+  return rows.reduce((notes, row) => {
+    notes[row.key] = {
+      weakness: row.notesGaps,
+      owner: row.ownerCollector,
+      date: row.dateCollected,
+      resources: row.sourceSystemTool,
+      milestones: Object.prototype.hasOwnProperty.call(milestones, row.key) ? milestones[row.key] : row.evidence,
+      status: row.evidenceStatus,
+    };
+    return notes;
+  }, {});
+}
+
+function buildWorkflowSspForm(organizationProfile = {}, scopeAnswers = {}) {
+  return {
+    organizationName: organizationProfile.organizationName || "",
+    systemName: organizationProfile.systemName || "",
+    scope: getAnswerText(scopeAnswers, "systemBoundaryScope") || buildWorkflowScopeSummary(organizationProfile),
+    environment: getAnswerText(scopeAnswers, "systemEnvironmentDescription") || buildWorkflowEnvironmentSummary(organizationProfile, scopeAnswers),
+  };
+}
+
+function buildWorkflowScopeSummary(organizationProfile = {}) {
+  const cuiFlow = organizationProfile.cuiFlow || {};
+  const workforce = organizationProfile.workforce || {};
+  const externalConnections = organizationProfile.externalConnections || {};
+
+  return [
+    workflowSummaryLine("Organization Type", organizationProfile.organizationType),
+    workflowSummaryLine("CUI Types", organizationProfile.cuiTypes),
+    workflowSummaryLine("CUI Received From", cuiFlow.receivedFrom),
+    workflowSummaryLine("CUI Storage Locations", cuiFlow.storageLocations),
+    workflowSummaryLine("CUI Transmission Methods", cuiFlow.transmissionMethods),
+    workflowSummaryLine("Retention Period", cuiFlow.retentionPeriod),
+    workflowSummaryLine("Primary CUI Flow", cuiFlow.flowDescription),
+    workflowSummaryLine("Workforce CUI Access", workforce.cuiEmployeeAccess),
+    workflowSummaryLine("Remote Workforce", workforce.remoteEmployees),
+    workflowSummaryLine("BYOD Use", workforce.byodUse),
+    workflowSummaryLine("IT Support", workforce.dedicatedItSupport),
+    workflowSummaryLine("VPN Required", externalConnections.vpnRequired),
+    workflowSummaryLine("Third-Party Access", externalConnections.thirdPartyAccess),
+    workflowSummaryLine("Government / Prime Portals", externalConnections.govPortals),
+    workflowSummaryLine("Connection Review", externalConnections.connectionReview),
+    workflowSummaryLine("Interconnection Notes", externalConnections.interconnectionNotes),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildWorkflowEnvironmentSummary(organizationProfile = {}, scopeAnswers = {}) {
+  return [
+    workflowSummaryLine("Cloud Platforms", organizationProfile.cloudPlatforms),
+    workflowSummaryLine("Email Platform", organizationProfile.emailPlatform),
+    workflowSummaryLine("Storage Platform", organizationProfile.storagePlatform),
+    workflowSummaryLine("Devices", organizationProfile.devices),
+    workflowSummaryLine("On-Premises Servers", getAnswerText(scopeAnswers, "onPremServers")),
+    workflowSummaryLine("Network Infrastructure", getAnswerText(scopeAnswers, "networkInfrastructure")),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function workflowSummaryLine(label, value) {
+  const formattedValue = formatWorkflowValue(value);
+  return formattedValue ? `${label}: ${formattedValue}` : "";
+}
+
+function formatWorkflowValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean).join(", ");
+  }
+
+  return String(value ?? "").trim();
+}
+
+function getAnswerText(scopeAnswers, key) {
+  return formatWorkflowValue(scopeAnswers?.[key]);
 }
 
 function TextField({ label, value, placeholder, type = "text", onChange }) {
@@ -397,4 +577,65 @@ function StatusStat({ value, label, tone }) {
       <p className="text-xs font-black uppercase text-slate-400">{label}</p>
     </div>
   );
+}
+
+function buildEvidenceRows(library) {
+  const controlsById = new Map((library.controls || []).map((control) => [control.controlId || control["Control ID"] || control.id, control]));
+  const evidenceById = new Map((library.evidence || []).map((evidence) => [evidence.id, evidence]));
+
+  return (library.mappings || []).flatMap((mapping, mappingIndex) => {
+    const control = controlsById.get(mapping.controlId);
+    const evidenceIds = mapping.evidenceRequirementIds || mapping.evidenceIds || [];
+
+    return evidenceIds.map((evidenceId, evidenceIndex) => {
+      const evidence = evidenceById.get(evidenceId) || {};
+      const controlId = mapping.controlId || evidence.controlId || control?.controlId || control?.["Control ID"] || "";
+      const controlFamily = evidence.controlFamily || evidence["Control Family"] || control?.controlFamily || control?.["Control Family"] || "";
+      const { domain, family, section } = parseControlFamily(controlFamily, controlId);
+
+      return {
+        key: `${controlId}-${evidenceId || evidenceIndex}`,
+        poamId: "",
+        section,
+        domain,
+        family,
+        controlId,
+        requirement: control?.controlRequirement || control?.["Control Requirement"] || evidence["Control Requirement"] || "",
+        evidence: evidence.evidenceToRequest || evidence["Evidence to Request"] || "",
+        publicNotesUse: evidence.publicNotesUse || evidence["Public Notes / Use"] || "",
+        evidenceStatus: evidence.evidenceStatus || evidence["Evidence Status"] || "",
+        ownerCollector: evidence.ownerCollector || evidence["Owner / Collector"] || "",
+        dateCollected: evidence.dateCollected || evidence["Date Collected"] || "",
+        sourceSystemTool: evidence.sourceSystemTool || evidence["Source System / Tool"] || "",
+        notesGaps: evidence.notesGaps || evidence["Notes / Gaps"] || "",
+        sourceOrder: mapping.sourceOrder ?? evidence._sourceOrder ?? control?._sourceOrder ?? mappingIndex,
+      };
+    });
+  });
+}
+
+function buildEvidenceMetrics(rows) {
+  return {
+    evidenceCount: rows.length,
+    controlCount: new Set(rows.map((row) => row.controlId)).size,
+    familyCount: new Set(rows.map((row) => row.domain)).size,
+    blankStatusCount: rows.filter((row) => !row.evidenceStatus).length,
+  };
+}
+
+function parseControlFamily(controlFamily, controlId) {
+  const [domainPart, ...familyNameParts] = controlFamily.split(" - ");
+  const domain = domainPart || controlId.split(".")[0] || "";
+  const family = familyNameParts.join(" - ") || controlFamily || domain;
+  const section = controlId.match(/L2-(3\.\d+)/)?.[1] || "";
+
+  return { domain, family, section };
+}
+
+function emptyFrameworkLibrary() {
+  return {
+    controls: [],
+    evidence: [],
+    mappings: [],
+  };
 }
