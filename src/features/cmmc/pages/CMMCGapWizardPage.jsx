@@ -87,7 +87,7 @@ export default function CMMCGapWizardPage() {
                 gap={activeGap}
                 currentIndex={activeGapIndex}
                 total={gapItems.length}
-                onStatusChange={(status) => updateControlWorkflowStatus(activeGap.workflowKey, status)}
+                onStatusChange={(status) => updateControlWorkflowStatus(activeGap.workflowKey, status, { source: "gap-wizard" })}
                 onPrevious={() => setActiveGapIndex((current) => Math.max(current - 1, 0))}
                 onNext={() => setActiveGapIndex((current) => Math.min(current + 1, gapItems.length - 1))}
               />

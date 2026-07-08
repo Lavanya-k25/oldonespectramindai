@@ -14,6 +14,9 @@ import ActivityFeed from "../components/dashboard/ActivityFeed";
 import ComplianceChart from "../components/dashboard/ComplianceChart";
 import AppShell from "../components/layout/AppShell";
 import { useComplianceState } from "../compliance/ComplianceStateContext";
+import { CMMC_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
+import { useCMMCActivityHistory, useCMMCSPRSCalculation, useCMMCWorkflowState } from "../features/cmmc/hooks";
+import { formatCMMCActivityName } from "../features/cmmc/services";
 import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
 import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 import { buildCrossModuleTarget } from "../navigation/crossModuleNavigation";
@@ -30,6 +33,10 @@ export default function Dashboard() {
 
 function DashboardContent({ activeFramework }) {
   const navigate = useNavigate();
+  const cmmcSPRS = useCMMCSPRSCalculation();
+  const cmmcActivities = useCMMCActivityHistory();
+  const { controlWorkflowFields } = useCMMCWorkflowState();
+  const isCMMCWorkspace = resolveFrameworkId(activeFramework.id) === CMMC_FRAMEWORK_ID;
   const {
     audit,
     controls,
@@ -50,73 +57,91 @@ function DashboardContent({ activeFramework }) {
   ];
   const completedImplementations = implementationRows.filter(isComplete).length;
   const totalImplementations = implementationRows.length;
-  const frameworkProgress = totalImplementations ? Math.round((completedImplementations / totalImplementations) * 100) : 0;
-  const auditReadiness = Math.round(audit.readiness ?? 0);
-  const overallScore = Math.round(audit.complianceScore ?? frameworkProgress);
+  const cmmcCompletionPercentage = clampPercent(cmmcSPRS.completionPercentage);
+  const cmmcCompliancePercentage = clampPercent(cmmcSPRS.compliancePercentage ?? cmmcSPRS.completionPercentage);
+  const frameworkProgress = isCMMCWorkspace
+    ? cmmcCompletionPercentage
+    : totalImplementations ? Math.round((completedImplementations / totalImplementations) * 100) : 0;
+  const auditReadiness = isCMMCWorkspace ? cmmcCompletionPercentage : Math.round(audit.readiness ?? 0);
+  const overallScore = isCMMCWorkspace ? cmmcCompliancePercentage : Math.round(audit.complianceScore ?? frameworkProgress);
   const applicableControls = controls.filter((control) => control.applicable).length;
-  const evidenceTotal = evidence.filter((record) => !record.deletedAt).length;
+  const cmmcEvidenceAttachmentStats = buildCMMCEvidenceAttachmentStats(controlWorkflowFields, cmmcSPRS.controls);
+  const evidenceTotal = isCMMCWorkspace
+    ? cmmcEvidenceAttachmentStats.totalAttachments
+    : evidence.filter((record) => !record.deletedAt).length;
+  const missingEvidenceTotal = isCMMCWorkspace
+    ? cmmcEvidenceAttachmentStats.missingControls
+    : audit.pendingEvidence?.length || 0;
   const policiesTotal = policies.length;
   const policiesPublished = policies.filter((policy) => policy.status === "Active" || isComplete(policy)).length;
   const openRisks = risks.filter((risk) => risk.applicable && ["Open", "In Progress"].includes(risk.treatmentStatus || risk.status)).length;
   const testsTotal = tests.length;
   const completedTests = tests.filter(isComplete).length;
   const openTasks = tasks.filter((task) => !isComplete(task)).length;
-  const recentActivityCount = audit.timeline?.length || 0;
+  const dashboardActivities = isCMMCWorkspace ? cmmcActivities : (audit.timeline || []);
+  const recentActivityCount = dashboardActivities.length;
+  const recentActivityNote = recentActivityCount
+    ? isCMMCWorkspace ? formatCMMCActivityName(dashboardActivities[0]) : "Latest compliance updates"
+    : "No activity yet";
   const highRisks = risks.filter((risk) => ["High", "Critical"].includes(risk.riskLevel || risk.severity) && ["Open", "In Progress"].includes(risk.treatmentStatus || risk.status)).length;
 
   const stats = [
-    {
-      label: "Compliance Score",
-      value: `${overallScore}%`,
-      note: `${completedImplementations} of ${totalImplementations} implementation items complete`,
-      icon: ShieldCheck,
-      tone: "text-emerald-600",
-      target: { itemType: "Audit", itemId: "compliance-score" },
-    },
-    {
-      label: "Audit Readiness",
-      value: `${auditReadiness}%`,
-      note: `${audit.openFindings || 0} open audit findings`,
-      icon: CheckCircle2,
-      tone: "text-blue-700",
-      target: { itemType: "Audit", itemId: "readiness" },
-    },
-    {
-      label: "Framework Progress",
-      value: `${frameworkProgress}%`,
-      note: `${activeFramework.name} active workspace`,
-      icon: Building2,
-      tone: "text-violet-600",
-      target: { itemType: "Implementation", itemId: "framework-progress" },
-    },
-    {
-      label: "Total Implementations",
-      value: String(totalImplementations),
-      note: `${completedImplementations} completed`,
-      icon: Wrench,
-      tone: "text-slate-700",
-      target: { itemType: "Implementation", itemId: "" },
-    },
-    {
-      label: "Completed Implementations",
-      value: String(completedImplementations),
-      note: `${Math.max(totalImplementations - completedImplementations, 0)} remaining`,
-      icon: CheckCircle2,
-      tone: "text-emerald-600",
-      target: { itemType: "Implementation", itemId: "" },
-    },
-    {
-      label: "Applicable Controls",
-      value: String(applicableControls),
-      note: `${controls.length} total controls`,
-      icon: ShieldCheck,
-      tone: "text-blue-700",
-      target: { itemType: "Control", itemId: "" },
-    },
+    ...(isCMMCWorkspace
+      ? buildCMMCDashboardStats(cmmcSPRS, cmmcCompliancePercentage, cmmcCompletionPercentage)
+      : [
+          {
+            label: "Compliance Score",
+            value: `${overallScore}%`,
+            note: `${completedImplementations} of ${totalImplementations} implementation items complete`,
+            icon: ShieldCheck,
+            tone: "text-emerald-600",
+            target: { itemType: "Audit", itemId: "compliance-score" },
+          },
+          {
+            label: "Audit Readiness",
+            value: `${auditReadiness}%`,
+            note: `${audit.openFindings || 0} open audit findings`,
+            icon: CheckCircle2,
+            tone: "text-blue-700",
+            target: { itemType: "Audit", itemId: "readiness" },
+          },
+          {
+            label: "Framework Progress",
+            value: `${frameworkProgress}%`,
+            note: `${activeFramework.name} active workspace`,
+            icon: Building2,
+            tone: "text-violet-600",
+            target: { itemType: "Implementation", itemId: "framework-progress" },
+          },
+          {
+            label: "Total Implementations",
+            value: String(totalImplementations),
+            note: `${completedImplementations} completed`,
+            icon: Wrench,
+            tone: "text-slate-700",
+            target: { itemType: "Implementation", itemId: "" },
+          },
+          {
+            label: "Completed Implementations",
+            value: String(completedImplementations),
+            note: `${Math.max(totalImplementations - completedImplementations, 0)} remaining`,
+            icon: CheckCircle2,
+            tone: "text-emerald-600",
+            target: { itemType: "Implementation", itemId: "" },
+          },
+          {
+            label: "Applicable Controls",
+            value: String(applicableControls),
+            note: `${controls.length} total controls`,
+            icon: ShieldCheck,
+            tone: "text-blue-700",
+            target: { itemType: "Control", itemId: "" },
+          },
+        ]),
     {
       label: "Evidence Count",
       value: String(evidenceTotal),
-      note: `${audit.pendingEvidence?.length || 0} missing evidence items`,
+      note: `${missingEvidenceTotal} missing evidence items`,
       icon: FileCheck2,
       tone: "text-blue-700",
       target: { itemType: "Evidence", itemId: "repository" },
@@ -156,7 +181,7 @@ function DashboardContent({ activeFramework }) {
     {
       label: "Recent Activity",
       value: String(recentActivityCount),
-      note: recentActivityCount ? "Latest compliance updates" : "No activity yet",
+      note: recentActivityNote,
       icon: CheckCircle2,
       tone: "text-emerald-600",
       target: { itemType: "Audit", itemId: "activity" },
@@ -171,7 +196,7 @@ function DashboardContent({ activeFramework }) {
     complianceScore: overallScore,
     auditReadiness,
     frameworkProgress,
-    evidenceCoverage: Math.round(audit.evidenceCoverage || 0),
+    evidenceCoverage: isCMMCWorkspace ? cmmcEvidenceAttachmentStats.coveragePercentage : Math.round(audit.evidenceCoverage || 0),
     testsProgress: testsTotal ? Math.round((completedTests / testsTotal) * 100) : 0,
     policyProgress: policiesTotal ? Math.round((policiesPublished / policiesTotal) * 100) : 0,
   });
@@ -303,6 +328,89 @@ function isComplete(item) {
   );
 }
 
+function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPercentage) {
+  const totalControls = Number(cmmcSPRS.totalControls) || 0;
+  const completedControls = Number(cmmcSPRS.completedControls) || 0;
+  const inProgressControls = Number(cmmcSPRS.inProgressControls) || 0;
+  const notStartedControls = Number(cmmcSPRS.notStartedControls) || 0;
+
+  return [
+    {
+      label: "Compliance Percentage",
+      value: `${compliancePercentage}%`,
+      note: `${completedControls} of ${totalControls} controls compliant`,
+      icon: ShieldCheck,
+      tone: "text-emerald-600",
+      target: { itemType: "Audit", itemId: "compliance-score" },
+    },
+    {
+      label: "Completion Percentage",
+      value: `${completionPercentage}%`,
+      note: `${completedControls} of ${totalControls} controls completed`,
+      icon: CheckCircle2,
+      tone: "text-blue-700",
+      target: { itemType: "Audit", itemId: "readiness" },
+    },
+    {
+      label: "Total Controls",
+      value: String(totalControls),
+      note: `${completedControls} completed`,
+      icon: Building2,
+      tone: "text-violet-600",
+      target: { itemType: "Control", itemId: "" },
+    },
+    {
+      label: "Completed Controls",
+      value: String(completedControls),
+      note: `${Math.max(totalControls - completedControls, 0)} remaining`,
+      icon: Wrench,
+      tone: "text-slate-700",
+      target: { itemType: "Control", itemId: "" },
+    },
+    {
+      label: "In Progress Controls",
+      value: String(inProgressControls),
+      note: `${notStartedControls} not started`,
+      icon: CheckCircle2,
+      tone: "text-emerald-600",
+      target: { itemType: "Control", itemId: "" },
+    },
+    {
+      label: "Not Started Controls",
+      value: String(notStartedControls),
+      note: `${totalControls} total controls`,
+      icon: ShieldCheck,
+      tone: "text-blue-700",
+      target: { itemType: "Control", itemId: "" },
+    },
+  ];
+}
+
+function buildCMMCEvidenceAttachmentStats(controlWorkflowFields = {}, controls = []) {
+  const controlIds = new Set(
+    (controls || [])
+      .map((control) => control.controlId)
+      .filter(Boolean)
+  );
+  Object.keys(controlWorkflowFields || {}).forEach((controlId) => controlIds.add(controlId));
+
+  const attachmentCountsByControl = Array.from(controlIds).map((controlId) => {
+    const attachments = controlWorkflowFields?.[controlId]?.attachments;
+    return Array.isArray(attachments) ? attachments.length : 0;
+  });
+  const totalAttachments = attachmentCountsByControl.reduce((total, count) => total + count, 0);
+  const missingControls = attachmentCountsByControl.filter((count) => count === 0).length;
+  const controlsWithAttachments = attachmentCountsByControl.length - missingControls;
+
+  return {
+    totalAttachments,
+    missingControls,
+    coveragePercentage: attachmentCountsByControl.length
+      ? Math.round((controlsWithAttachments / attachmentCountsByControl.length) * 100)
+      : 0,
+  };
+}
+
 function buildDashboardChartData(scores) {
   return [
     ["Compliance", scores.complianceScore],
@@ -312,4 +420,8 @@ function buildDashboardChartData(scores) {
     ["Tests", scores.testsProgress],
     ["Policies", scores.policyProgress],
   ].map(([label, score]) => ({ label, score: Math.max(0, Math.min(100, Number(score) || 0)) }));
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }

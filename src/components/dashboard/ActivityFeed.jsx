@@ -1,9 +1,22 @@
 import { CheckCircle2 } from "lucide-react";
 import { useComplianceState } from "../../compliance/ComplianceStateContext";
+import { CMMC_FRAMEWORK_ID, resolveFrameworkId } from "../../core/engines/framework-engine/frameworkRegistry";
+import { useCMMCActivityHistory } from "../../features/cmmc/hooks";
+import { formatCMMCActivityName } from "../../features/cmmc/services";
+import { useFrameworkWorkspace } from "../../framework/FrameworkWorkspaceContext";
 
 export default function ActivityFeed() {
   const { audit } = useComplianceState();
-  const activities = (audit.timeline || []).slice(0, 5);
+  const { activeFramework } = useFrameworkWorkspace();
+  const cmmcActivities = useCMMCActivityHistory();
+  const isCMMCWorkspace = resolveFrameworkId(activeFramework?.id) === CMMC_FRAMEWORK_ID;
+  const activities = isCMMCWorkspace
+    ? cmmcActivities.slice(0, 5).map((activity) => ({
+        id: activity.id,
+        name: formatCMMCActivityName(activity),
+        timestamp: activity.timestamp,
+      }))
+    : (audit.timeline || []).slice(0, 5);
 
   return (
     <div className="h-full rounded-lg border border-white/75 bg-white/62 p-6 shadow-xl shadow-slate-900/5 backdrop-blur">

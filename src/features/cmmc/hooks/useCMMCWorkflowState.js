@@ -4,6 +4,11 @@ import {
   saveOrgQuestionnaireAnswers,
 } from "../../../core/adapters/useOrganizationStore";
 import { CMMC_FRAMEWORK_ID } from "../../../core/engines/framework-engine/frameworkRegistry";
+import {
+  CMMC_ACTIVITY_TYPES,
+  recordCMMCActivities,
+  recordCMMCActivity,
+} from "../services/cmmcActivityHistoryService";
 
 const QUESTIONNAIRE_EVENT = "spectramind:questionnaire-updated";
 const EVIDENCE_WORKFLOW_FIELDS_KEY = "__cmmcEvidenceWorkflowFields";
@@ -15,7 +20,7 @@ const EVIDENCE_WORKFLOW_FIELDS = [
   "sourceSystemTool",
   "notesGaps",
 ];
-const CONTROL_WORKFLOW_FIELDS = ["status"];
+const CONTROL_WORKFLOW_FIELDS = ["status", "attachments"];
 
 export const CMMC_CONTROL_WORKFLOW_STATUS_OPTIONS = ["Not Started", "In Progress", "Completed"];
 
@@ -69,6 +74,7 @@ export function useCMMCWorkflowState() {
     const nextAnswers =
       typeof updater === "function" ? updater(currentAnswers) : updater;
     const savedAnswers = saveCMMCScopeAnswers(nextAnswers);
+    recordScopeAnswerActivities(currentAnswers, savedAnswers);
     setScopeAnswers(savedAnswers);
     return savedAnswers;
   }, []);
@@ -92,7 +98,7 @@ export function useCMMCWorkflowState() {
   );
 
   const updateEvidenceWorkflowField = useCallback(
-    (evidenceKey, field, value) =>
+    (evidenceKey, field, value, options = {}) =>
       updateScopeAnswers((currentAnswers) => {
         const normalizedKey = String(evidenceKey ?? "").trim();
         if (!normalizedKey || !EVIDENCE_WORKFLOW_FIELDS.includes(field)) {
@@ -100,6 +106,18 @@ export function useCMMCWorkflowState() {
         }
 
         const currentFields = getCMMCEvidenceWorkflowFields(currentAnswers);
+        const previousValue = currentFields[normalizedKey]?.[field] ?? "";
+        const nextValue = String(value ?? "");
+
+        if (!options.suppressActivity) {
+          recordCMMCActivity({
+            activityType: options.activityType || getEvidenceActivityType(field),
+            controlId: options.controlId || getControlIdFromEvidenceKey(normalizedKey),
+            evidenceKey: normalizedKey,
+            previousValue,
+            newValue: nextValue,
+          });
+        }
 
         return {
           ...currentAnswers,
@@ -107,7 +125,7 @@ export function useCMMCWorkflowState() {
             ...currentFields,
             [normalizedKey]: {
               ...(currentFields[normalizedKey] || {}),
-              [field]: String(value ?? ""),
+              [field]: nextValue,
             },
           },
         };
@@ -116,7 +134,7 @@ export function useCMMCWorkflowState() {
   );
 
   const updateControlWorkflowField = useCallback(
-    (controlKey, field, value) =>
+    (controlKey, field, value, options = {}) =>
       updateScopeAnswers((currentAnswers) => {
         const normalizedKey = String(controlKey ?? "").trim();
         if (!normalizedKey || !CONTROL_WORKFLOW_FIELDS.includes(field)) {
@@ -124,6 +142,26 @@ export function useCMMCWorkflowState() {
         }
 
         const currentFields = getCMMCControlWorkflowFields(currentAnswers);
+        const previousValue = currentFields[normalizedKey]?.[field] ?? "";
+        const nextValue = normalizeControlWorkflowFieldValue(field, value);
+
+        if (!options.suppressActivity) {
+          recordCMMCActivity({
+            activityType: options.activityType || CMMC_ACTIVITY_TYPES.CONTROL_STATUS_CHANGED,
+            controlId: normalizedKey,
+            previousValue,
+            newValue: nextValue,
+          });
+        }
+
+        if (options.source === "gap-wizard" && field === "status" && nextValue === "Completed") {
+          recordCMMCActivity({
+            activityType: CMMC_ACTIVITY_TYPES.GAP_WIZARD_REVIEW_COMPLETED,
+            controlId: normalizedKey,
+            previousValue,
+            newValue: nextValue,
+          });
+        }
 
         return {
           ...currentAnswers,
@@ -131,7 +169,7 @@ export function useCMMCWorkflowState() {
             ...currentFields,
             [normalizedKey]: {
               ...(currentFields[normalizedKey] || {}),
-              [field]: String(value ?? ""),
+              [field]: nextValue,
             },
           },
         };
@@ -140,7 +178,15 @@ export function useCMMCWorkflowState() {
   );
 
   const updateControlWorkflowStatus = useCallback(
-    (controlKey, status) => updateControlWorkflowField(controlKey, "status", status),
+    (controlKey, status, options) => updateControlWorkflowField(controlKey, "status", status, options),
+    [updateControlWorkflowField]
+  );
+
+  const updateControlAttachments = useCallback(
+    (controlKey, attachments) =>
+      updateControlWorkflowField(controlKey, "attachments", attachments, {
+        suppressActivity: true,
+      }),
     [updateControlWorkflowField]
   );
 
@@ -164,6 +210,7 @@ export function useCMMCWorkflowState() {
     updateScopeAnswers,
     updateControlWorkflowField,
     updateControlWorkflowStatus,
+    updateControlAttachments,
     updateEvidenceWorkflowField,
   };
 }
@@ -181,7 +228,7 @@ export function getCMMCControlWorkflowFields(scopeAnswers = {}) {
 
     const normalizedFieldValues = CONTROL_WORKFLOW_FIELDS.reduce((values, field) => {
       if (Object.prototype.hasOwnProperty.call(fieldValues, field)) {
-        values[field] = String(fieldValues[field] ?? "");
+        values[field] = normalizeControlWorkflowFieldValue(field, fieldValues[field]);
       }
       return values;
     }, {});
@@ -257,6 +304,83 @@ export function getCMMCOrganizationProfile(scopeAnswers = {}) {
 
 export function getCMMCOrganizationProfileSearchText(organizationProfile = {}) {
   return flattenProfileValues(organizationProfile).join(" ").toLowerCase();
+}
+
+function recordScopeAnswerActivities(previousAnswers = {}, nextAnswers = {}) {
+  const answerIds = new Set([
+    ...Object.keys(previousAnswers || {}),
+    ...Object.keys(nextAnswers || {}),
+  ]);
+  const activities = Array.from(answerIds)
+    .filter(isWorkflowScopeAnswerKey)
+    .map((answerId) => ({
+      activityType: CMMC_ACTIVITY_TYPES.SCOPE_ANSWER_CHANGED,
+      answerId,
+      previousValue: previousAnswers?.[answerId],
+      newValue: nextAnswers?.[answerId],
+    }));
+
+  recordCMMCActivities(activities);
+}
+
+function normalizeControlWorkflowFieldValue(field, value) {
+  if (field === "attachments") {
+    return normalizeAttachmentMetadataList(value);
+  }
+
+  return String(value ?? "");
+}
+
+function normalizeAttachmentMetadataList(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((attachment) => {
+      if (!attachment || typeof attachment !== "object" || Array.isArray(attachment)) {
+        return null;
+      }
+
+      const fileName = String(attachment.fileName || "").trim();
+      const fileType = String(attachment.fileType || "").trim().toUpperCase();
+      const fileSize = Number(attachment.fileSize) || 0;
+      const uploadedAt = String(attachment.uploadedAt || "").trim();
+
+      if (!fileName || !fileType || !uploadedAt) {
+        return null;
+      }
+
+      return {
+        fileName,
+        fileType,
+        fileSize,
+        uploadedAt,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getEvidenceActivityType(field) {
+  const activityTypesByField = {
+    evidenceStatus: CMMC_ACTIVITY_TYPES.EVIDENCE_STATUS_CHANGED,
+    ownerCollector: CMMC_ACTIVITY_TYPES.EVIDENCE_OWNER_CHANGED,
+    dateCollected: CMMC_ACTIVITY_TYPES.DATE_COLLECTED_CHANGED,
+    sourceSystemTool: CMMC_ACTIVITY_TYPES.SOURCE_SYSTEM_CHANGED,
+    notesGaps: CMMC_ACTIVITY_TYPES.NOTES_GAPS_CHANGED,
+  };
+
+  return activityTypesByField[field] || "CMMC Evidence Changed";
+}
+
+function getControlIdFromEvidenceKey(evidenceKey) {
+  const match = String(evidenceKey || "").match(/^[A-Z]{2}\.L\d-\d+\.\d+\.\d+/);
+  return match?.[0] || "";
+}
+
+function isWorkflowScopeAnswerKey(answerId) {
+  return ![
+    CONTROL_WORKFLOW_FIELDS_KEY,
+    EVIDENCE_WORKFLOW_FIELDS_KEY,
+  ].includes(answerId) && !String(answerId || "").startsWith("__");
 }
 
 function normalizeAnswers(answers) {

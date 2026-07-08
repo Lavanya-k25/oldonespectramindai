@@ -6,6 +6,7 @@ import {
 } from "../../../core/engines/framework-engine/frameworkRegistry";
 import { CMMCImplementationLayout, useCMMCWorkspaceFilters } from "../components";
 import { useCMMCWorkflowState } from "../hooks";
+import { CMMC_ACTIVITY_TYPES, exportCMMCSSPToPDF } from "../services";
 
 const tabs = [
   { id: "ssp", label: "System Security Plan", icon: FileText },
@@ -15,6 +16,8 @@ const tabs = [
 
 const cmmcLibrary = getFrameworkLibrary(CMMC_FRAMEWORK_ID) || emptyFrameworkLibrary();
 const evidenceRows = buildEvidenceRows(cmmcLibrary);
+const attachmentAccept = ".pdf,.docx,.xlsx,.png,.jpg,.jpeg";
+const supportedAttachmentTypes = new Set(["PDF", "DOCX", "XLSX", "PNG", "JPG", "JPEG"]);
 
 const initialSspForm = {
   owner: "",
@@ -65,6 +68,7 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
     controlWorkflowFields,
     evidenceWorkflowFields,
     updateScopeAnswer,
+    updateControlAttachments,
     updateControlWorkflowStatus,
     updateEvidenceWorkflowField,
   } = useCMMCWorkflowState();
@@ -171,6 +175,7 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
             row.publicNotesUse,
             row.evidenceStatus,
             row.notesGaps,
+            ...(row.attachments || []).map((attachment) => attachment.fileName),
           ]
             .join(" ")
             .toLowerCase()
@@ -194,11 +199,16 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
   const updatePoamNote = (id, field, value) => {
     const workflowField = poamWorkflowFields[field];
     if (workflowField) {
-      updateEvidenceWorkflowField(id, workflowField, value);
+      const poamRow = workflowEvidenceRows.find((row) => row.key === id);
+      const controlId = poamRow?.controlId || "";
+      updateEvidenceWorkflowField(id, workflowField, value, {
+        controlId,
+      });
       if (field === "status") {
-        const controlId = workflowEvidenceRows.find((row) => row.key === id)?.controlId;
         if (controlId) {
-          updateControlWorkflowStatus(controlId, value);
+          updateControlWorkflowStatus(controlId, value, {
+            activityType: CMMC_ACTIVITY_TYPES.POAM_REMEDIATION_STATUS_CHANGED,
+          });
         }
       }
       return;
@@ -207,6 +217,23 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
     if (field === "milestones") {
       setPoamMilestones((current) => ({ ...current, [id]: value }));
     }
+  };
+
+  const attachEvidenceFiles = (controlId, currentAttachments, files) => {
+    const nextAttachments = [
+      ...(Array.isArray(currentAttachments) ? currentAttachments : []),
+      ...Array.from(files || []).map(fileToAttachmentMetadata).filter(Boolean),
+    ];
+
+    updateControlAttachments(controlId, nextAttachments);
+  };
+
+  const exportSSPToPDF = () => {
+    exportCMMCSSPToPDF({
+      form: sspFormValues,
+      organizationProfile,
+      controls: workflowEvidenceRows,
+    });
   };
 
   return (
@@ -238,6 +265,8 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
             onChange={updateSspForm}
             controls={visibleSspControls}
             onNoteChange={(evidenceKey, value) => updateEvidenceWorkflowField(evidenceKey, "notesGaps", value)}
+            onAttachFiles={attachEvidenceFiles}
+            onExportPDF={exportSSPToPDF}
           />
         )}
         {activeTab === "poam" && (
@@ -248,7 +277,7 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
   );
 }
 
-function SSPView({ form, onChange, controls, onNoteChange }) {
+function SSPView({ form, onChange, controls, onNoteChange, onAttachFiles, onExportPDF }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -257,7 +286,7 @@ function SSPView({ form, onChange, controls, onNoteChange }) {
           <button type="button" className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-black text-violet-700">
             Clear Notes
           </button>
-          <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-[#171630] px-4 py-2 text-sm font-black text-white">
+          <button type="button" onClick={onExportPDF} className="inline-flex items-center gap-2 rounded-lg bg-[#171630] px-4 py-2 text-sm font-black text-white">
             <Printer size={15} />
             Print / Export PDF
           </button>
@@ -313,6 +342,10 @@ function SSPView({ form, onChange, controls, onNoteChange }) {
                 value={row.notesGaps}
                 placeholder="Describe how this control is implemented in your environment. Include tools, processes, responsible personnel, and specific configurations..."
                 onChange={(value) => onNoteChange(row.key, value)}
+              />
+              <AttachmentSection
+                attachments={row.attachments}
+                onFilesSelected={(files) => onAttachFiles(row.controlId, row.attachments, files)}
               />
             </div>
           </article>
@@ -456,6 +489,7 @@ function applyEvidenceWorkflowFields(row, fieldOverrides = {}, controlFieldOverr
     dateCollected: workflowFieldValue(fieldOverrides, "dateCollected", row.dateCollected),
     sourceSystemTool: workflowFieldValue(fieldOverrides, "sourceSystemTool", row.sourceSystemTool),
     notesGaps: workflowFieldValue(fieldOverrides, "notesGaps", row.notesGaps),
+    attachments: Array.isArray(controlFieldOverrides?.attachments) ? controlFieldOverrides.attachments : [],
   };
 }
 
@@ -559,6 +593,69 @@ function TextArea({ label, value, placeholder, onChange }) {
       <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} rows={3} className="mt-2 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
     </label>
   );
+}
+
+function AttachmentSection({ attachments = [], onFilesSelected }) {
+  return (
+    <div className="mt-4 rounded border border-slate-200 bg-white px-3 py-3">
+      <label className="block">
+        <span className="text-xs font-black uppercase tracking-wide text-slate-400">Evidence Attachments</span>
+        <input
+          type="file"
+          multiple
+          accept={attachmentAccept}
+          onChange={(event) => {
+            onFilesSelected?.(event.target.files);
+            event.target.value = "";
+          }}
+          className="mt-2 block w-full text-xs font-semibold text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-violet-100 file:px-3 file:py-2 file:text-xs file:font-black file:text-violet-700"
+        />
+      </label>
+      <div className="mt-3 space-y-2">
+        {attachments.map((attachment, index) => (
+          <div key={`${attachment.fileName}-${attachment.uploadedAt}-${index}`} className="flex flex-col gap-1 rounded bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-black text-slate-700">{attachment.fileName}</span>
+            <span>{attachment.fileType} | {formatFileSize(attachment.fileSize)} | {formatAttachmentDate(attachment.uploadedAt)}</span>
+          </div>
+        ))}
+        {!attachments.length && (
+          <p className="text-xs font-semibold text-slate-400">No files attached.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function fileToAttachmentMetadata(file) {
+  const fileType = getSupportedFileType(file);
+  if (!fileType) return null;
+
+  return {
+    fileName: file.name,
+    fileType,
+    fileSize: file.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+function getSupportedFileType(file) {
+  const extension = String(file?.name || "").split(".").pop().toUpperCase();
+  if (!supportedAttachmentTypes.has(extension)) return "";
+  return extension === "JPEG" ? "JPG" : extension;
+}
+
+function formatFileSize(value) {
+  const size = Number(value) || 0;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
+function formatAttachmentDate(value) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function POAMMetric({ value, label, tone }) {

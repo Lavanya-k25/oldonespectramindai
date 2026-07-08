@@ -1,11 +1,21 @@
 import { Download, FileText } from "lucide-react";
+import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useComplianceState } from "../compliance/ComplianceStateContext";
 import AppShell from "../components/layout/AppShell";
+import {
+  CMMC_FRAMEWORK_ID,
+  getFrameworkLibrary,
+} from "../core/engines/framework-engine/frameworkRegistry";
 import { getCurrentVersion, getEvidenceHealth } from "../evidence/EvidenceService";
+import { useCMMCWorkflowState } from "../features/cmmc/hooks";
 import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
 import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 import { buildCrossModuleTarget } from "../navigation/crossModuleNavigation";
+
+const CMMC_ATTACHMENT_SOURCE = "cmmc_workflow_attachment";
+const cmmcLibrary = getFrameworkLibrary(CMMC_FRAMEWORK_ID) || emptyFrameworkLibrary();
+const cmmcControlsById = buildCMMCControlsById(cmmcLibrary.controls);
 
 const healthStyles = {
   Valid: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -29,7 +39,15 @@ function EvidenceContent({ activeFramework }) {
   const navigate = useNavigate();
   const targetItemId = new URLSearchParams(location.search).get("item");
   const { evidenceStore } = useComplianceState();
-  const records = evidenceStore.records.filter((record) => !record.deletedAt);
+  const { controlWorkflowFields } = useCMMCWorkflowState();
+  const cmmcEvidenceRecords = useMemo(
+    () => buildCMMCEvidenceRecords(controlWorkflowFields),
+    [controlWorkflowFields]
+  );
+  const records = useMemo(
+    () => mergeEvidenceRecords(evidenceStore.records, cmmcEvidenceRecords).filter((record) => !record.deletedAt),
+    [cmmcEvidenceRecords, evidenceStore.records]
+  );
   const openImplementationRecord = (itemId, itemType, evidenceId) => {
     const target = buildCrossModuleTarget({
       activeFramework,
@@ -66,6 +84,7 @@ function EvidenceContent({ activeFramework }) {
             const metadata = record.metadata || {};
             const health = getEvidenceHealth(record);
             const mappings = record.mappings || [];
+            const isCMMCAttachment = metadata.source === CMMC_ATTACHMENT_SOURCE;
             const linkedTests = uniqueValues(mappings.map((mapping) => mapping.testId).filter(Boolean));
             const linkedControls = uniqueValues([
               ...(metadata.linkedControls || []),
@@ -96,6 +115,12 @@ function EvidenceContent({ activeFramework }) {
                       <RepositoryMeta label="File Type" value={version?.fileType || metadata.fileType} />
                       <RepositoryMeta label="Uploaded By" value={version?.uploadedByName || metadata.uploadedBy} />
                       <RepositoryMeta label="Linked Framework" value={metadata.linkedFramework || activeFramework.id} />
+                      {isCMMCAttachment ? (
+                        <>
+                          <RepositoryMeta label="Control Name" value={metadata.controlName} />
+                          <RepositoryMeta label="File Size" value={formatFileSize(version?.fileSize || metadata.fileSize)} />
+                        </>
+                      ) : null}
                       <RepositoryLinks
                         label="Linked Test"
                         ids={linkedTests.length ? linkedTests : [metadata.linkedTest].filter(Boolean)}
@@ -194,4 +219,189 @@ function formatDate(value) {
 
 function uniqueValues(values) {
   return [...new Set((values || []).filter(Boolean))];
+}
+
+function buildCMMCEvidenceRecords(controlWorkflowFields = {}) {
+  const seenAttachmentKeys = new Set();
+
+  return Object.entries(controlWorkflowFields || {}).flatMap(([controlId, fieldValues]) => {
+    const attachments = Array.isArray(fieldValues?.attachments) ? fieldValues.attachments : [];
+    const control = cmmcControlsById.get(controlId) || {};
+    const controlName = getCMMCControlName(control);
+    const controlFamily = control.controlFamily || control["Control Family"] || "";
+
+    return attachments.reduce((records, attachment) => {
+      const fileName = String(attachment?.fileName || "").trim();
+      const fileType = String(attachment?.fileType || "").trim();
+      const fileSize = Number(attachment?.fileSize) || 0;
+      const uploadedAt = String(attachment?.uploadedAt || "").trim();
+
+      if (!fileName || !fileType || !uploadedAt) return records;
+
+      const attachmentKey = cmmcAttachmentKey({
+        controlId,
+        fileName,
+        fileType,
+        fileSize,
+        uploadedAt,
+      });
+
+      if (seenAttachmentKeys.has(attachmentKey)) return records;
+      seenAttachmentKeys.add(attachmentKey);
+
+      const evidenceId = `cmmc-evidence-${slugify(controlId)}-${hashString(attachmentKey)}`;
+      const versionId = `${evidenceId}-version-1`;
+
+      records.push({
+        id: evidenceId,
+        title: fileName,
+        description: controlName,
+        source: CMMC_ATTACHMENT_SOURCE,
+        currentVersionId: versionId,
+        reviewStatus: "not_reviewed",
+        approvalStatus: "pending",
+        evidenceStatus: "",
+        health: "Needs Review",
+        expiresAt: "",
+        tags: [],
+        metadata: {
+          evidenceId,
+          source: CMMC_ATTACHMENT_SOURCE,
+          fileName,
+          fileType,
+          fileSize,
+          uploadedAt,
+          version: 1,
+          linkedFramework: CMMC_FRAMEWORK_ID,
+          linkedControls: [controlId],
+          controlId,
+          controlName,
+          description: controlName,
+        },
+        mappings: [
+          {
+            id: `${evidenceId}-mapping-1`,
+            evidenceId,
+            frameworkId: CMMC_FRAMEWORK_ID,
+            domain: controlFamily,
+            controlId,
+            createdAt: uploadedAt,
+          },
+        ],
+        versions: [
+          {
+            id: versionId,
+            evidenceId,
+            versionNumber: 1,
+            fileName,
+            fileType,
+            fileSize,
+            downloadUrl: "",
+            previewUrl: "",
+            uploadedAt,
+            notes: "",
+          },
+        ],
+        comments: [],
+        reviews: [],
+        auditHistory: [],
+        createdAt: uploadedAt,
+        updatedAt: uploadedAt,
+      });
+
+      return records;
+    }, []);
+  });
+}
+
+function mergeEvidenceRecords(existingRecords = [], cmmcRecords = []) {
+  const seenKeys = new Set();
+  const mergedRecords = [];
+
+  for (const record of [...existingRecords, ...cmmcRecords]) {
+    const key = evidenceRecordMergeKey(record);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    mergedRecords.push(record);
+  }
+
+  return mergedRecords;
+}
+
+function evidenceRecordMergeKey(record) {
+  if (record?.metadata?.source === CMMC_ATTACHMENT_SOURCE) {
+    const version = getCurrentVersion(record);
+    return cmmcAttachmentKey({
+      controlId: record.metadata?.controlId || record.metadata?.linkedControls?.[0] || "",
+      fileName: version?.fileName || record.metadata?.fileName || record.title,
+      fileType: version?.fileType || record.metadata?.fileType,
+      fileSize: version?.fileSize || record.metadata?.fileSize,
+      uploadedAt: version?.uploadedAt || record.metadata?.uploadedAt || record.createdAt,
+    });
+  }
+
+  return `evidence:${record?.id || ""}`;
+}
+
+function cmmcAttachmentKey({ controlId, fileName, fileType, fileSize, uploadedAt }) {
+  return [
+    CMMC_ATTACHMENT_SOURCE,
+    normalizeKeyPart(controlId),
+    normalizeKeyPart(fileName),
+    normalizeKeyPart(fileType),
+    Number(fileSize) || 0,
+    normalizeKeyPart(uploadedAt),
+  ].join("|");
+}
+
+function buildCMMCControlsById(controls = []) {
+  return new Map(
+    (controls || [])
+      .map((control) => [control.controlId || control["Control ID"] || control.id, control])
+      .filter(([controlId]) => controlId)
+  );
+}
+
+function getCMMCControlName(control = {}) {
+  return (
+    control.controlRequirement ||
+    control["Control Requirement"] ||
+    control.title ||
+    control.name ||
+    control.description ||
+    ""
+  );
+}
+
+function formatFileSize(value) {
+  const size = Number(value) || 0;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
+function normalizeKeyPart(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function hashString(value) {
+  let hash = 0;
+  const input = String(value || "");
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function emptyFrameworkLibrary() {
+  return {
+    controls: [],
+  };
 }

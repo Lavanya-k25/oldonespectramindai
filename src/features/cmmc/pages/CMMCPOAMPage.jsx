@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   CMMC_FRAMEWORK_ID,
   getFrameworkLibrary,
@@ -7,7 +8,7 @@ import {
   CMMCSectionCard,
   CMMCStatusBadge,
 } from "../components";
-import { useCMMCModule } from "../hooks";
+import { useCMMCModule, useCMMCWorkflowState } from "../hooks";
 
 const fallbackModule = {
   title: "POA&M",
@@ -19,7 +20,12 @@ const poamRows = buildPoamRows(cmmcLibrary);
 
 export default function CMMCPOAMPage() {
   const module = useCMMCModule("poam") || fallbackModule;
+  const { controlWorkflowFields, evidenceWorkflowFields } = useCMMCWorkflowState();
   const frameworkName = cmmcLibrary.framework?.name || module.title;
+  const workflowPoamRows = useMemo(
+    () => poamRows.map((row) => applyPoamWorkflowFields(row, evidenceWorkflowFields, controlWorkflowFields)),
+    [controlWorkflowFields, evidenceWorkflowFields]
+  );
 
   return (
     <CMMCPageLayout
@@ -30,7 +36,7 @@ export default function CMMCPOAMPage() {
       <CMMCSectionCard
         title="POA&M framework review"
         description={`${frameworkName} controls and mapped evidence from the framework library.`}
-        actions={<CMMCStatusBadge tone="info">{poamRows.length} Controls</CMMCStatusBadge>}
+        actions={<CMMCStatusBadge tone="info">{workflowPoamRows.length} Controls</CMMCStatusBadge>}
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left text-sm">
@@ -48,7 +54,7 @@ export default function CMMCPOAMPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {poamRows.map((row) => (
+              {workflowPoamRows.map((row) => (
                 <tr key={row.key} className="align-top transition hover:bg-slate-50/70">
                   <td className="px-4 py-3 font-black text-violet-700">{row.controlId}</td>
                   <td className="px-4 py-3">
@@ -85,10 +91,12 @@ function buildPoamRows(library) {
     const firstEvidence = evidenceItems[0] || {};
     const controlId = mapping.controlId || control.controlId || control["Control ID"] || firstEvidence.controlId || "";
     const controlFamily = control.controlFamily || control["Control Family"] || firstEvidence.controlFamily || firstEvidence["Control Family"] || "";
+    const workflowKeys = evidenceIds.map((evidenceId, evidenceIndex) => `${controlId}-${evidenceId || evidenceIndex}`);
 
     return [
       {
         key: `${controlId}-${mapping.sourceOrder ?? mappingIndex}`,
+        workflowKeys,
         controlId,
         controlFamily,
         domain: parseControlDomain(controlFamily, controlId),
@@ -102,6 +110,31 @@ function buildPoamRows(library) {
       },
     ];
   });
+}
+
+function applyPoamWorkflowFields(row, evidenceWorkflowFields = {}, controlWorkflowFields = {}) {
+  const fieldOverrides = findPoamWorkflowFields(row, evidenceWorkflowFields);
+
+  return {
+    ...row,
+    evidenceStatus: workflowFieldValue(controlWorkflowFields[row.controlId], "status", row.evidenceStatus),
+    ownerCollector: workflowFieldValue(fieldOverrides, "ownerCollector", row.ownerCollector),
+    dateCollected: workflowFieldValue(fieldOverrides, "dateCollected", row.dateCollected),
+    sourceSystemTool: workflowFieldValue(fieldOverrides, "sourceSystemTool", row.sourceSystemTool),
+    notesGaps: workflowFieldValue(fieldOverrides, "notesGaps", row.notesGaps),
+  };
+}
+
+function findPoamWorkflowFields(row, evidenceWorkflowFields) {
+  const workflowKeys = [row.key, ...(row.workflowKeys || [])];
+  return workflowKeys.reduce((matchedFields, workflowKey) => {
+    const fieldOverrides = evidenceWorkflowFields[workflowKey];
+    return fieldOverrides ? { ...matchedFields, ...fieldOverrides } : matchedFields;
+  }, {});
+}
+
+function workflowFieldValue(fieldOverrides, field, fallback) {
+  return Object.prototype.hasOwnProperty.call(fieldOverrides || {}, field) ? fieldOverrides[field] : fallback;
 }
 
 function parseControlDomain(controlFamily, controlId) {

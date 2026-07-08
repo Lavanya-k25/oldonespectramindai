@@ -24,15 +24,35 @@ export default function CMMCSPRSScorePage() {
 }
 
 function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
-  useCMMCSPRSCalculation();
+  const sprsMetrics = useCMMCSPRSCalculation();
   const [partialCredit, setPartialCredit] = useState({
     "3.5.3": "No MFA implemented (-5 pts)",
     "3.13.11": "No encryption employed (-5 pts)",
   });
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const remediationStatusByControl = useMemo(
+    () => new Map((sprsMetrics.controls || []).map((control) => [control.controlId, control.status])),
+    [sprsMetrics.controls]
+  );
+  const workflowRemediations = useMemo(
+    () => remediations.map((remediation) => applyWorkflowStatus(remediation, remediationStatusByControl)),
+    [remediationStatusByControl]
+  );
+  const controlsRemaining = Math.max(
+    (Number(sprsMetrics.inProgressControls) || 0) + (Number(sprsMetrics.notStartedControls) || 0),
+    0
+  );
+  const completionPercentage = Math.max(0, Math.min(100, Math.round(Number(sprsMetrics.completionPercentage) || 0)));
+  const pointsSecured = workflowRemediations.reduce(
+    (total, remediation) => {
+      const [, points, , , status] = remediation;
+      return isCompletedStatus(status) ? total + parsePointValue(points) : total;
+    },
+    0
+  );
   const visibleRemediations = useMemo(
     () =>
-      remediations.filter(([control, points, requirement, domain, status, evidence]) => {
+      workflowRemediations.filter(([control, points, requirement, domain, status, evidence]) => {
         const matchesSearch =
           !normalizedSearch ||
           [control, points, requirement, domain, status, evidence].join(" ").toLowerCase().includes(normalizedSearch);
@@ -41,7 +61,7 @@ function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
 
         return matchesSearch && matchesDomain && matchesStatus;
       }),
-    [domainFilter, normalizedSearch, statusFilter]
+    [domainFilter, normalizedSearch, statusFilter, workflowRemediations]
   );
 
   return (
@@ -73,7 +93,7 @@ function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-4">
             <ScoreBox value="-203" label="Current SPRS" />
-            <ScoreBox value="0" label="Points Secured" tone="text-emerald-400" />
+            <ScoreBox value={String(pointsSecured)} label="Points Secured" tone="text-emerald-400" />
             <ScoreBox value="313" label="Points at Risk" tone="text-red-400" />
             <ScoreBox value="44" label="Critical Gaps" tone="text-amber-300" />
           </div>
@@ -105,7 +125,7 @@ function CMMCSPRSScoreContent({ searchQuery, domainFilter, statusFilter }) {
           <div className="p-4">
             <h2 className="text-base font-black text-slate-900">Prioritized Remediation - Highest Point Value First</h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              110 controls remaining. Completing 5-pt controls gives the fastest score improvement.
+              {controlsRemaining} controls remaining ({completionPercentage}% complete). Completing 5-pt controls gives the fastest score improvement.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -173,6 +193,29 @@ function buildRemediations(library) {
       evidence.evidenceToRequest || evidence["Evidence to Request"] || "",
     ];
   });
+}
+
+function applyWorkflowStatus(remediation, remediationStatusByControl) {
+  const [control, points, requirement, domain, status, evidence] = remediation;
+  const workflowStatus = remediationStatusByControl.get(control);
+
+  return [
+    control,
+    points,
+    requirement,
+    domain,
+    workflowStatus || status,
+    evidence,
+  ];
+}
+
+function isCompletedStatus(status) {
+  return String(status ?? "").trim().toLowerCase() === "completed";
+}
+
+function parsePointValue(points) {
+  const value = Number(String(points ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(value) ? value : 0;
 }
 
 function parseControlDomain(controlFamily, controlId) {
