@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FileText, Search, SlidersHorizontal, ChevronDown, X, ShieldAlert, Download, Settings } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
 import { useComplianceState } from "../compliance/ComplianceStateContext";
 import { readScopedJson } from "../auth/session";
 import { useUser } from "../auth/UserContext";
+import { CMMC_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
+import { useCMMCWorkflowState } from "../features/cmmc/hooks";
+import {
+  buildCMMCPolicyDocumentMetrics,
+  buildCMMCPolicyDocumentRows,
+} from "../features/cmmc/services";
 import {
   archivePolicy,
   canManagePolicies,
@@ -43,8 +49,11 @@ function PoliciesContent({ activeFramework }) {
   const navigate = useNavigate();
   const targetItemId = new URLSearchParams(location.search).get("item");
   const { policies: frameworkPolicies, workspaceData, actions } = useComplianceState();
+  const { controlWorkflowFields, evidenceWorkflowFields } = useCMMCWorkflowState();
   const { user } = useUser();
+  const isCMMCWorkspace = resolveFrameworkId(activeFramework.id) === CMMC_FRAMEWORK_ID;
   const canManage = canManagePolicies(user);
+  const canEditGenericPolicies = canManage && !isCMMCWorkspace;
   const [employees, setEmployees] = useState(() => readScopedJson("spectramind:employees", []));
   const [policyLibrary, setPolicyLibrary] = useState(() => loadPolicyLibrary(activeFramework.id, frameworkPolicies, activeFramework));
   const [policyAssignments, setPolicyAssignments] = useState(() =>
@@ -91,7 +100,7 @@ function PoliciesContent({ activeFramework }) {
   };
 
   const updatePolicyField = (policyId, updates) => {
-    if (!canManage) return;
+    if (!canEditGenericPolicies) return;
     const currentPolicy = policyLibrary.find((policy) => policy.id === policyId);
     const nextLibrary = updatePolicy(policyLibrary, policyId, updates);
     const nextAcknowledgements =
@@ -103,24 +112,24 @@ function PoliciesContent({ activeFramework }) {
   };
 
   const handlePublish = (policyId) => {
-    if (!canManage) return;
+    if (!canEditGenericPolicies) return;
     persistLibrary(publishPolicy(policyLibrary, policyId));
   };
 
   const handleArchivePolicy = (policyId) => {
-    if (!canManage) return;
+    if (!canEditGenericPolicies) return;
     persistLibrary(archivePolicy(policyLibrary, policyId));
   };
 
   const handleAssignmentToggle = (policyId, employeeId) => {
-    if (!canManage) return;
+    if (!canEditGenericPolicies) return;
     const current = policyAssignments[policyId] || [];
     const next = current.includes(employeeId) ? current.filter((id) => id !== employeeId) : [...current, employeeId];
     persistAssignments({ ...policyAssignments, [policyId]: next });
   };
 
   const handleCreatePolicy = () => {
-    if (!canManage || !newPolicyName.trim()) return;
+    if (!canEditGenericPolicies || !newPolicyName.trim()) return;
     const nextLibrary = createCustomPolicy(activeFramework.id, policyLibrary, {
       name: newPolicyName.trim(),
       description: newPolicyDescription.trim(),
@@ -138,7 +147,19 @@ function PoliciesContent({ activeFramework }) {
   const currentEmployee = employees.find((employee) => employee.email?.toLowerCase() === user?.email?.toLowerCase()) ||
     employees.find((employee) => employee.name === user?.name);
 
-  const policies = policyLibrary.map((p) => {
+  const cmmcPolicyDocumentRows = useMemo(
+    () =>
+      buildCMMCPolicyDocumentRows({
+        controlWorkflowFields,
+        evidenceWorkflowFields,
+      }),
+    [controlWorkflowFields, evidenceWorkflowFields]
+  );
+  const cmmcPolicyMetrics = useMemo(
+    () => buildCMMCPolicyDocumentMetrics(cmmcPolicyDocumentRows),
+    [cmmcPolicyDocumentRows]
+  );
+  const genericPolicies = policyLibrary.map((p) => {
     const saved = workspaceData[p.id] ?? {};
     const activeAcks = acknowledgementsState[p.id] || {};
     const metrics = getPolicyMetrics(p, employees, policyAssignments, acknowledgementsState);
@@ -178,11 +199,16 @@ function PoliciesContent({ activeFramework }) {
       })) || []
     };
   });
+  const policies = isCMMCWorkspace
+    ? cmmcPolicyDocumentRows.map((row) => buildCMMCPolicyPageRow(row, activeFramework))
+    : genericPolicies;
 
 
   const [selectedPolicyId, setSelectedPolicyId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const visiblePolicies = canManage
+  const visiblePolicies = isCMMCWorkspace
+    ? policies
+    : canManage
     ? policies
     : policies.filter((policy) => currentEmployee && (policyAssignments[policy.id] || []).includes(currentEmployee.id));
 
@@ -268,23 +294,25 @@ function PoliciesContent({ activeFramework }) {
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-black text-slate-950 dark:text-white">SOC 2</h3>
+                <h3 className="font-black text-slate-950 dark:text-white">{isCMMCWorkspace ? "CMMC" : "SOC 2"}</h3>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  22 of 22 applicable published (22 total, 0 not applicable)
+                  {isCMMCWorkspace
+                    ? `${cmmcPolicyMetrics.publishedPolicies} of ${cmmcPolicyMetrics.totalPolicies} published (${cmmcPolicyMetrics.remainingPolicies} remaining)`
+                    : "22 of 22 applicable published (22 total, 0 not applicable)"}
                 </p>
               </div>
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-700 text-xs font-black">
-                100%
+                {isCMMCWorkspace ? `${cmmcPolicyMetrics.publishedPercentage}%` : "100%"}
               </span>
             </div>
             <div className="mt-4 space-y-2 text-xs font-bold text-slate-500">
               <div className="flex items-center justify-between">
                 <span>Published</span>
-                <span>100%</span>
+                <span>{isCMMCWorkspace ? cmmcPolicyMetrics.publishedPolicies : "100%"}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Acknowledged</span>
-                <span>0%</span>
+                <span>{isCMMCWorkspace ? "Remaining" : "Acknowledged"}</span>
+                <span>{isCMMCWorkspace ? cmmcPolicyMetrics.remainingPolicies : "0%"}</span>
               </div>
             </div>
           </div>
@@ -293,23 +321,25 @@ function PoliciesContent({ activeFramework }) {
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-black text-slate-950 dark:text-white">HIPAA</h3>
+                <h3 className="font-black text-slate-950 dark:text-white">{isCMMCWorkspace ? "NIST SP 800-171" : "HIPAA"}</h3>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  30 of 30 applicable published (30 total, 1 not applicable)
+                  {isCMMCWorkspace
+                    ? `${cmmcPolicyMetrics.inProgressPolicies} in progress, ${cmmcPolicyMetrics.notStartedPolicies} not started`
+                    : "30 of 30 applicable published (30 total, 1 not applicable)"}
                 </p>
               </div>
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-50 text-rose-700 text-xs font-black">
-                0%
+                {isCMMCWorkspace ? cmmcPolicyMetrics.remainingPolicies : "0%"}
               </span>
             </div>
             <div className="mt-4 space-y-2 text-xs font-bold text-slate-500">
               <div className="flex items-center justify-between">
-                <span>Published</span>
-                <span>0%</span>
+                <span>{isCMMCWorkspace ? "In Progress" : "Published"}</span>
+                <span>{isCMMCWorkspace ? cmmcPolicyMetrics.inProgressPolicies : "0%"}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Acknowledged</span>
-                <span>0%</span>
+                <span>{isCMMCWorkspace ? "Not Started" : "Acknowledged"}</span>
+                <span>{isCMMCWorkspace ? cmmcPolicyMetrics.notStartedPolicies : "0%"}</span>
               </div>
             </div>
           </div>
@@ -342,7 +372,7 @@ function PoliciesContent({ activeFramework }) {
           </div>
         </div>
 
-        {canManage ? (
+        {canEditGenericPolicies ? (
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <h2 className="text-sm font-black text-slate-900">Create Policy</h2>
             <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
@@ -462,7 +492,7 @@ function PoliciesContent({ activeFramework }) {
                 </button>
               </div>
 
-              {canManage ? (
+              {canEditGenericPolicies ? (
                 <div className="grid gap-2">
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -616,33 +646,35 @@ function PoliciesContent({ activeFramework }) {
               ) : null}
 
               {/* Uploaded Policy Documents */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Uploaded Policy Documents</h4>
-                <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded bg-blue-50 p-2 text-blue-600">
-                      <FileText size={18} />
+              {selectedPolicy.documentName ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Uploaded Policy Documents</h4>
+                  <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded bg-blue-50 p-2 text-blue-600">
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">{selectedPolicy.documentName}</p>
+                        <p className="text-[10px] font-semibold text-slate-400">{selectedPolicy.documentDate}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-black text-slate-900 dark:text-white">{selectedPolicy.documentName}</p>
-                      <p className="text-[10px] font-semibold text-slate-400">{selectedPolicy.documentDate}</p>
-                    </div>
+                    <button className="text-slate-400 hover:text-slate-700">
+                      <Download size={16} />
+                    </button>
                   </div>
-                  <button className="text-slate-400 hover:text-slate-700">
-                    <Download size={16} />
-                  </button>
                 </div>
-              </div>
+              ) : null}
 
               {/* Employee Acknowledgements */}
               {selectedPolicy.acknowledgements.length > 0 && selectedPolicy.status !== "not_applicable" && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                    {canManage ? "Employee Assignments & Acknowledgements" : "My Acknowledgement"}
+                    {canEditGenericPolicies ? "Employee Assignments & Acknowledgements" : "My Acknowledgement"}
                   </h4>
                   <div className="grid gap-2">
-                    {(canManage ? employees : selectedPolicy.acknowledgements).map((item) => {
-                      const employee = canManage ? item : employees.find((candidate) => candidate.id === item.id) || item;
+                    {(canEditGenericPolicies ? employees : selectedPolicy.acknowledgements).map((item) => {
+                      const employee = canEditGenericPolicies ? item : employees.find((candidate) => candidate.id === item.id) || item;
                       const isAssigned = (policyAssignments[selectedPolicy.id] || []).includes(employee.id);
                       const ack = selectedPolicy.acknowledgements.find((candidate) => candidate.id === employee.id) || {
                         id: employee.id,
@@ -656,7 +688,7 @@ function PoliciesContent({ activeFramework }) {
                         className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-700 p-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/50 select-none dark:border-slate-800"
                       >
                         <div className="flex items-center gap-2.5">
-                          {canManage ? (
+                          {canEditGenericPolicies ? (
                             <input
                               type="checkbox"
                               checked={isAssigned}
@@ -716,6 +748,7 @@ function PoliciesContent({ activeFramework }) {
                 </div>
               )}
 
+              {!isCMMCWorkspace ? (
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
                 <button
                   onClick={() => handleToggleApplicability(selectedPolicy.id)}
@@ -726,10 +759,64 @@ function PoliciesContent({ activeFramework }) {
                     : "Mark as Not Applicable"}
                 </button>
               </div>
+              ) : null}
             </aside>
           )}
         </section>
       </div>
     </AppShell>
   );
+}
+
+function buildCMMCPolicyPageRow(row, activeFramework) {
+  const frameworkName = activeFramework?.shortName || activeFramework?.name || "CMMC";
+  const owner = row.ownerCollector || "Unassigned";
+  const title = row.controlId || row.key || "";
+  const description = row.evidence || row.requirement || "";
+
+  return {
+    id: row.key,
+    title,
+    description,
+    status: row.policyStatus,
+    acknowledged: "Not required",
+    nextVersion: "",
+    reviewers: "",
+    assignedTo: owner,
+    renewalFrequency: row.dateCollected || "",
+    frameworks: frameworkName,
+    otherFrameworks: "",
+    tags: [row.domain].filter(Boolean),
+    documentName: "",
+    documentDate: "",
+    acknowledgements: [],
+    metrics: {
+      assigned: 0,
+      acknowledged: 0,
+      pending: 0,
+      percentage: 0,
+    },
+    policy: {
+      id: row.key,
+      name: title,
+      description,
+      version: "",
+      owner: row.ownerCollector || "",
+      effectiveDate: row.dateCollected || "",
+      reviewDate: "",
+      versionHistory: [],
+      sourcePolicy: row,
+    },
+    connectedTests: row.controlId
+      ? [
+          {
+            id: row.controlId,
+            title: row.controlId,
+            description: row.requirement,
+            owner,
+            status: row.policyStatus,
+          },
+        ]
+      : [],
+  };
 }

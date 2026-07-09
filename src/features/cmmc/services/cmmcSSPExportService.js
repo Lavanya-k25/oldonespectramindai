@@ -149,7 +149,7 @@ function buildEvidenceSummary(controls = []) {
   };
 }
 
-function createTextPDF(lines) {
+export function createTextPDF(lines) {
   const pages = paginateLines(lines);
   const pageStreams = pages.map(renderPageContent);
   const objects = [];
@@ -228,25 +228,25 @@ function renderPageContent(lines) {
     .join("\n");
 }
 
-function addTitle(lines, text) {
+export function addTitle(lines, text) {
   addLine(lines, text, { size: 20, bold: true, height: 28 });
 }
 
-function addSubtitle(lines, text) {
+export function addSubtitle(lines, text) {
   addLine(lines, text, { size: 12, height: 18 });
 }
 
-function addSection(lines, text) {
+export function addSection(lines, text) {
   addSpacer(lines, 8);
   addLine(lines, text, { size: 14, bold: true, height: 22 });
 }
 
-function addField(lines, label, value) {
+export function addField(lines, label, value) {
   const formattedValue = formatWorkflowValue(value);
   addWrappedText(lines, `${label}: ${formattedValue}`, { size: 10 });
 }
 
-function addMultilineField(lines, label, value) {
+export function addMultilineField(lines, label, value) {
   const formattedValue = formatWorkflowValue(value);
   addLine(lines, `${label}:`, { size: 10, bold: true });
 
@@ -262,7 +262,7 @@ function addMultilineField(lines, label, value) {
     });
 }
 
-function addWrappedText(lines, text, options = {}) {
+export function addWrappedText(lines, text, options = {}) {
   const size = options.size || 10;
   const indent = options.indent || 0;
   wrapText(text, size, indent).forEach((wrappedLine) => {
@@ -282,7 +282,7 @@ function addLine(lines, text, options = {}) {
   });
 }
 
-function addSpacer(lines, height) {
+export function addSpacer(lines, height) {
   lines.push({ type: "spacer", height });
 }
 
@@ -320,7 +320,7 @@ function formatControlFamily(control = {}) {
   return [control.domain, control.family].filter(Boolean).join(" - ");
 }
 
-function formatWorkflowValue(value) {
+export function formatWorkflowValue(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item ?? "").trim()).filter(Boolean).join(", ");
   }
@@ -328,7 +328,7 @@ function formatWorkflowValue(value) {
   return String(value ?? "").trim();
 }
 
-function formatFileSize(value) {
+export function formatFileSize(value) {
   const size = Number(value) || 0;
   if (!size) return "";
   if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
@@ -336,7 +336,7 @@ function formatFileSize(value) {
   return `${size} B`;
 }
 
-function formatDateTime(value) {
+export function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -350,7 +350,7 @@ function buildSSPFileName(form = {}) {
   return `${nameParts.join("-") || "CMMC-SSP"}.pdf`;
 }
 
-function downloadBlob(blob, fileName) {
+export function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -381,7 +381,7 @@ function formatNumber(value) {
   return Number(value).toFixed(2).replace(/\.00$/, "");
 }
 
-function slugify(value) {
+export function slugify(value) {
   return String(value || "")
     .trim()
     .toLowerCase()

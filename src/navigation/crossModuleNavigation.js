@@ -1,3 +1,5 @@
+import { CMMC_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
+
 const IMPLEMENTATION_TYPES = new Set(["Control", "Test", "Implementation", "Population", "Risk"]);
 
 const MODULE_PATHS = {
@@ -14,10 +16,31 @@ const MODULE_PATHS = {
   Audit: "/audits",
 };
 
+const CMMC_MODULE_PATHS = {
+  Scope: "/cmmc/scope",
+  Organization: "/cmmc/organization",
+  "Gap Wizard": "/cmmc/gap-wizard",
+  SPRS: "/cmmc/sprs-score",
+  Auditor: "/cmmc/auditor",
+  Evidence: "/cmmc/evidence",
+  Policy: "/policies",
+  "Policy Documents": "/policies",
+  Control: "/cmmc/controls",
+  Test: "/cmmc/assessment-objectives",
+  Implementation: "/cmmc/progress",
+  Population: "/cmmc/progress",
+  Risk: "/cmmc/risks",
+  Questionnaire: "/cmmc/scope",
+  Training: "/training",
+  Task: "/tasks",
+};
+
 export function buildCrossModuleTarget({ activeFramework, itemId, itemType, moduleContext = "", mode = "view" }) {
   const normalizedType = normalizeItemType(itemType);
   const frameworkId = activeFramework?.id || activeFramework?.slug || activeFramework || "";
-  const path = MODULE_PATHS[normalizedType] || "/implementation";
+  const path = isCMMCFramework(frameworkId)
+    ? getCMMCModulePath(normalizedType, itemId, moduleContext)
+    : MODULE_PATHS[normalizedType] || "/implementation";
   const params = new URLSearchParams({
     framework: frameworkId,
     item: itemId || "",
@@ -54,6 +77,12 @@ export function normalizeItemType(itemType = "") {
     Risks: "Risk",
     EvidenceRequirements: "Evidence",
     Tasks: "Task",
+    "Policy Document": "Policy Documents",
+    "Policy Documents": "Policy Documents",
+    "SPRS Score": "SPRS",
+    "SPRS": "SPRS",
+    "Audit Readiness": "Auditor",
+    "Audits": "Audit",
   }[normalized] || normalized || "Implementation";
 }
 
@@ -66,4 +95,27 @@ export function implementationTabForItemType(itemType, fallback = "Tests") {
     Implementation: "Populations",
     Population: "Populations",
   }[normalizeItemType(itemType)] || fallback;
+}
+
+function isCMMCFramework(frameworkId) {
+  return resolveFrameworkId(frameworkId) === CMMC_FRAMEWORK_ID;
+}
+
+function getCMMCModulePath(normalizedType, itemId, moduleContext) {
+  if (normalizedType === "Audit") {
+    const normalizedItemId = String(itemId || "").toLowerCase();
+    const normalizedContext = String(moduleContext || "").toLowerCase();
+
+    if (normalizedItemId.includes("compliance-score") || normalizedContext.includes("compliance percentage")) {
+      return "/cmmc/sprs-score";
+    }
+
+    if (normalizedItemId.includes("activity") || normalizedContext.includes("recent activity")) {
+      return "/cmmc/auditor";
+    }
+
+    return "/cmmc/auditor";
+  }
+
+  return CMMC_MODULE_PATHS[normalizedType] || MODULE_PATHS[normalizedType] || "/cmmc/scope";
 }

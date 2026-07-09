@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Wrench,
 } from "lucide-react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import ActivityFeed from "../components/dashboard/ActivityFeed";
 import ComplianceChart from "../components/dashboard/ComplianceChart";
@@ -16,7 +17,13 @@ import AppShell from "../components/layout/AppShell";
 import { useComplianceState } from "../compliance/ComplianceStateContext";
 import { CMMC_FRAMEWORK_ID, resolveFrameworkId } from "../core/engines/framework-engine/frameworkRegistry";
 import { useCMMCActivityHistory, useCMMCSPRSCalculation, useCMMCWorkflowState } from "../features/cmmc/hooks";
-import { formatCMMCActivityName } from "../features/cmmc/services";
+import {
+  buildCMMCPolicyDocumentMetrics,
+  buildCMMCPolicyDocumentRows,
+  buildCMMCEvidenceAttachmentStats,
+  exportCMMCExecutiveReportToPDF,
+  formatCMMCActivityName,
+} from "../features/cmmc/services";
 import ActiveFrameworkRequired from "../framework/ActiveFrameworkRequired";
 import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 import { buildCrossModuleTarget } from "../navigation/crossModuleNavigation";
@@ -35,7 +42,7 @@ function DashboardContent({ activeFramework }) {
   const navigate = useNavigate();
   const cmmcSPRS = useCMMCSPRSCalculation();
   const cmmcActivities = useCMMCActivityHistory();
-  const { controlWorkflowFields } = useCMMCWorkflowState();
+  const { workflowState, controlWorkflowFields, evidenceWorkflowFields } = useCMMCWorkflowState();
   const isCMMCWorkspace = resolveFrameworkId(activeFramework.id) === CMMC_FRAMEWORK_ID;
   const {
     audit,
@@ -72,8 +79,25 @@ function DashboardContent({ activeFramework }) {
   const missingEvidenceTotal = isCMMCWorkspace
     ? cmmcEvidenceAttachmentStats.missingControls
     : audit.pendingEvidence?.length || 0;
-  const policiesTotal = policies.length;
-  const policiesPublished = policies.filter((policy) => policy.status === "Active" || isComplete(policy)).length;
+  const cmmcPolicyRows = useMemo(
+    () =>
+      buildCMMCPolicyDocumentRows({
+        controlWorkflowFields,
+        evidenceWorkflowFields,
+      }),
+    [controlWorkflowFields, evidenceWorkflowFields]
+  );
+  const cmmcPolicyMetrics = useMemo(
+    () => buildCMMCPolicyDocumentMetrics(cmmcPolicyRows),
+    [cmmcPolicyRows]
+  );
+  const policiesTotal = isCMMCWorkspace ? cmmcPolicyMetrics.totalPolicies : policies.length;
+  const policiesPublished = isCMMCWorkspace
+    ? cmmcPolicyMetrics.publishedPolicies
+    : policies.filter((policy) => policy.status === "Active" || isComplete(policy)).length;
+  const policiesRemaining = isCMMCWorkspace
+    ? cmmcPolicyMetrics.remainingPolicies
+    : Math.max(policiesTotal - policiesPublished, 0);
   const openRisks = risks.filter((risk) => risk.applicable && ["Open", "In Progress"].includes(risk.treatmentStatus || risk.status)).length;
   const testsTotal = tests.length;
   const completedTests = tests.filter(isComplete).length;
@@ -148,8 +172,10 @@ function DashboardContent({ activeFramework }) {
     },
     {
       label: "Policies",
-      value: String(policiesTotal),
-      note: `${policiesPublished} published`,
+      value: String(isCMMCWorkspace ? policiesPublished : policiesTotal),
+      note: isCMMCWorkspace
+        ? `${policiesPublished} published, ${policiesRemaining} remaining`
+        : `${policiesPublished} published`,
       icon: ScrollText,
       tone: "text-amber-700",
       target: { itemType: "Policy", itemId: "" },
@@ -188,17 +214,23 @@ function DashboardContent({ activeFramework }) {
     },
   ];
 
-  const readiness = (audit.checklist || []).slice(0, 3).map((item) => [
-    item.relatedItemId || item.name,
-    item.status || item.category,
-  ]);
+  const readiness = (audit.checklist || []).slice(0, 3).map((item) => ({
+    label: item.relatedItemId || item.name,
+    status: item.status || item.category,
+    target: {
+      itemId: item.relatedItemId || item.id || item.name,
+      itemType: item.category || "Audit",
+    },
+  }));
   const chartData = buildDashboardChartData({
     complianceScore: overallScore,
     auditReadiness,
     frameworkProgress,
     evidenceCoverage: isCMMCWorkspace ? cmmcEvidenceAttachmentStats.coveragePercentage : Math.round(audit.evidenceCoverage || 0),
     testsProgress: testsTotal ? Math.round((completedTests / testsTotal) * 100) : 0,
-    policyProgress: policiesTotal ? Math.round((policiesPublished / policiesTotal) * 100) : 0,
+    policyProgress: isCMMCWorkspace
+      ? cmmcPolicyMetrics.publishedPercentage
+      : policiesTotal ? Math.round((policiesPublished / policiesTotal) * 100) : 0,
   });
   const chartDelta = chartData.length > 1 ? chartData.at(-1).score - chartData[0].score : 0;
   const navigateToCard = (stat) => {
@@ -210,6 +242,35 @@ function DashboardContent({ activeFramework }) {
       mode: "view",
     });
     navigate(target.path, { state: target.state });
+  };
+  const navigateToStartReview = () => {
+    const target = buildCrossModuleTarget({
+      activeFramework,
+      itemId: "start-review",
+      itemType: isCMMCWorkspace ? "Gap Wizard" : "Audit",
+      moduleContext: "Dashboard:Start Review",
+      mode: "view",
+    });
+    navigate(target.path, { state: target.state });
+  };
+  const navigateToReadinessItem = (item) => {
+    const target = buildCrossModuleTarget({
+      activeFramework,
+      itemId: item.target.itemId,
+      itemType: item.target.itemType,
+      moduleContext: "Dashboard:Readiness Queue",
+      mode: "view",
+    });
+    navigate(target.path, { state: target.state });
+  };
+  const exportExecutiveReport = () => {
+    exportCMMCExecutiveReportToPDF({
+      workflowState,
+      sprsMetrics: cmmcSPRS,
+      policyRows: cmmcPolicyRows,
+      policyMetrics: cmmcPolicyMetrics,
+      activityHistory: cmmcActivities,
+    });
   };
 
   return (
@@ -228,10 +289,18 @@ function DashboardContent({ activeFramework }) {
             </p>
           </div>
 
-          <button className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-600/35 bg-[linear-gradient(135deg,rgba(255,246,216,.96),rgba(216,180,109,.74)_48%,rgba(168,117,52,.86))] px-5 py-3 font-bold text-slate-900 shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5">
-            Start Review
-            <ArrowUpRight size={18} />
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {isCMMCWorkspace && (
+              <button type="button" onClick={exportExecutiveReport} className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-600/35 bg-[linear-gradient(135deg,rgba(255,246,216,.96),rgba(216,180,109,.74)_48%,rgba(168,117,52,.86))] px-5 py-3 font-bold text-slate-900 shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5">
+                Export Executive Report
+                <ArrowUpRight size={18} />
+              </button>
+            )}
+            <button type="button" onClick={navigateToStartReview} className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-600/35 bg-[linear-gradient(135deg,rgba(255,246,216,.96),rgba(216,180,109,.74)_48%,rgba(168,117,52,.86))] px-5 py-3 font-bold text-slate-900 shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5">
+              Start Review
+              <ArrowUpRight size={18} />
+            </button>
+          </div>
         </div>
 
         <section className="overflow-hidden rounded-lg border border-white/80 bg-white/58 text-slate-900 shadow-2xl shadow-slate-900/10 backdrop-blur">
@@ -264,13 +333,18 @@ function DashboardContent({ activeFramework }) {
             <div className="rounded-lg border border-slate-200 bg-[#fffdf8]/70 p-5">
               <h3 className="font-black">Readiness queue</h3>
               <div className="mt-4 space-y-3">
-                {readiness.map(([label, status]) => (
-                  <div key={label} className="flex items-center justify-between gap-4 text-sm">
-                    <span className="text-slate-600">{label}</span>
+                {readiness.map((item) => (
+                  <button
+                    type="button"
+                    key={item.label}
+                    onClick={() => navigateToReadinessItem(item)}
+                    className="flex items-center justify-between gap-4 text-sm"
+                  >
+                    <span className="text-slate-600">{item.label}</span>
                     <span className="rounded-full bg-blue-50 px-3 py-1 font-bold text-blue-800">
-                      {status}
+                      {item.status}
                     </span>
-                  </div>
+                  </button>
                 ))}
                 {!readiness.length && (
                   <div className="text-sm font-semibold text-slate-500">No open readiness items.</div>
@@ -341,7 +415,7 @@ function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPerce
       note: `${completedControls} of ${totalControls} controls compliant`,
       icon: ShieldCheck,
       tone: "text-emerald-600",
-      target: { itemType: "Audit", itemId: "compliance-score" },
+      target: { itemType: "SPRS", itemId: "compliance-score" },
     },
     {
       label: "Completion Percentage",
@@ -349,7 +423,7 @@ function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPerce
       note: `${completedControls} of ${totalControls} controls completed`,
       icon: CheckCircle2,
       tone: "text-blue-700",
-      target: { itemType: "Audit", itemId: "readiness" },
+      target: { itemType: "Gap Wizard", itemId: "workflow-status" },
     },
     {
       label: "Total Controls",
@@ -365,7 +439,7 @@ function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPerce
       note: `${Math.max(totalControls - completedControls, 0)} remaining`,
       icon: Wrench,
       tone: "text-slate-700",
-      target: { itemType: "Control", itemId: "" },
+      target: { itemType: "Gap Wizard", itemId: "completed-controls" },
     },
     {
       label: "In Progress Controls",
@@ -373,7 +447,7 @@ function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPerce
       note: `${notStartedControls} not started`,
       icon: CheckCircle2,
       tone: "text-emerald-600",
-      target: { itemType: "Control", itemId: "" },
+      target: { itemType: "Gap Wizard", itemId: "in-progress-controls" },
     },
     {
       label: "Not Started Controls",
@@ -381,34 +455,9 @@ function buildCMMCDashboardStats(cmmcSPRS, compliancePercentage, completionPerce
       note: `${totalControls} total controls`,
       icon: ShieldCheck,
       tone: "text-blue-700",
-      target: { itemType: "Control", itemId: "" },
+      target: { itemType: "Gap Wizard", itemId: "not-started-controls" },
     },
   ];
-}
-
-function buildCMMCEvidenceAttachmentStats(controlWorkflowFields = {}, controls = []) {
-  const controlIds = new Set(
-    (controls || [])
-      .map((control) => control.controlId)
-      .filter(Boolean)
-  );
-  Object.keys(controlWorkflowFields || {}).forEach((controlId) => controlIds.add(controlId));
-
-  const attachmentCountsByControl = Array.from(controlIds).map((controlId) => {
-    const attachments = controlWorkflowFields?.[controlId]?.attachments;
-    return Array.isArray(attachments) ? attachments.length : 0;
-  });
-  const totalAttachments = attachmentCountsByControl.reduce((total, count) => total + count, 0);
-  const missingControls = attachmentCountsByControl.filter((count) => count === 0).length;
-  const controlsWithAttachments = attachmentCountsByControl.length - missingControls;
-
-  return {
-    totalAttachments,
-    missingControls,
-    coveragePercentage: attachmentCountsByControl.length
-      ? Math.round((controlsWithAttachments / attachmentCountsByControl.length) * 100)
-      : 0,
-  };
 }
 
 function buildDashboardChartData(scores) {

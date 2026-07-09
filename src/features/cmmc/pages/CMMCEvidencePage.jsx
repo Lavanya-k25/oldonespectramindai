@@ -6,7 +6,13 @@ import {
 } from "../../../core/engines/framework-engine/frameworkRegistry";
 import { CMMCImplementationLayout, useCMMCWorkspaceFilters } from "../components";
 import { useCMMCWorkflowState } from "../hooks";
-import { CMMC_ACTIVITY_TYPES, exportCMMCSSPToPDF } from "../services";
+import {
+  CMMC_ACTIVITY_TYPES,
+  buildCMMCPolicyDocumentMetrics,
+  buildCMMCPolicyDocumentRows,
+  exportCMMCPOAMToPDF,
+  exportCMMCSSPToPDF,
+} from "../services";
 
 const tabs = [
   { id: "ssp", label: "System Security Plan", icon: FileText },
@@ -91,9 +97,22 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
       ),
     [controlWorkflowFields, evidenceWorkflowFields]
   );
+  const policyDocumentRows = useMemo(
+    () =>
+      buildCMMCPolicyDocumentRows({
+        controlWorkflowFields,
+        evidenceWorkflowFields,
+        frameworkLibrary: cmmcLibrary,
+      }),
+    [controlWorkflowFields, evidenceWorkflowFields]
+  );
   const evidenceMetrics = useMemo(
     () => buildEvidenceMetrics(workflowEvidenceRows),
     [workflowEvidenceRows]
+  );
+  const policyMetrics = useMemo(
+    () => buildCMMCPolicyDocumentMetrics(policyDocumentRows),
+    [policyDocumentRows]
   );
   const poamNotes = useMemo(
     () => buildPoamNotes(workflowEvidenceRows, poamMilestones),
@@ -102,7 +121,7 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
 
   const visiblePolicies = useMemo(
     () =>
-      workflowEvidenceRows.filter((row) => {
+      policyDocumentRows.filter((row) => {
         const matchesDomain = domainFilter === "all" || domainFilter === row.domain;
         const matchesSearch =
           !normalizedSearch ||
@@ -126,7 +145,7 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
 
         return matchesDomain && matchesSearch;
       }),
-    [domainFilter, normalizedSearch, workflowEvidenceRows]
+    [domainFilter, normalizedSearch, policyDocumentRows]
   );
 
   const visiblePoamRows = useMemo(
@@ -236,6 +255,17 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
     });
   };
 
+  const exportPOAMToPDF = () => {
+    exportCMMCPOAMToPDF({
+      organizationProfile,
+      assessmentDate: sspFormValues.date,
+      rows: visiblePoamRows.map((row) => ({
+        ...row,
+        poamNotes: poamNotes[row.key] || {},
+      })),
+    });
+  };
+
   return (
     <section className="mx-auto max-w-6xl space-y-5">
         <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm md:grid-cols-3">
@@ -270,9 +300,9 @@ function CMMCEvidenceContent({ searchQuery, domainFilter, statusFilter }) {
           />
         )}
         {activeTab === "poam" && (
-          <POAMView rows={visiblePoamRows} notes={poamNotes} onChange={updatePoamNote} metrics={evidenceMetrics} organizationName={organizationProfile.organizationName} />
+          <POAMView rows={visiblePoamRows} notes={poamNotes} onChange={updatePoamNote} metrics={evidenceMetrics} organizationName={organizationProfile.organizationName} onExportPDF={exportPOAMToPDF} />
         )}
-        {activeTab === "policies" && <PolicyView policies={visiblePolicies} metrics={evidenceMetrics} organizationName={organizationProfile.organizationName} />}
+        {activeTab === "policies" && <PolicyView policies={visiblePolicies} metrics={policyMetrics} organizationName={organizationProfile.organizationName} />}
     </section>
   );
 }
@@ -355,14 +385,14 @@ function SSPView({ form, onChange, controls, onNoteChange, onAttachFiles, onExpo
   );
 }
 
-function POAMView({ rows, notes, onChange, metrics, organizationName }) {
+function POAMView({ rows, notes, onChange, metrics, organizationName, onExportPDF }) {
   const displayOrganizationName = organizationName || "[Organization Name]";
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-black text-slate-900">Plan of Action & Milestones (POA&M)</h1>
-        <button type="button" className="inline-flex w-fit items-center gap-2 rounded-lg bg-[#171630] px-4 py-2 text-sm font-black text-white">
+        <button type="button" onClick={onExportPDF} className="inline-flex w-fit items-center gap-2 rounded-lg bg-[#171630] px-4 py-2 text-sm font-black text-white">
           <Printer size={15} />
           Print / Export PDF
         </button>
@@ -481,10 +511,13 @@ function PolicyView({ policies, metrics, organizationName }) {
 
 function applyEvidenceWorkflowFields(row, fieldOverrides = {}, controlFieldOverrides = {}) {
   const evidenceStatus = workflowFieldValue(fieldOverrides, "evidenceStatus", row.evidenceStatus);
+  const currentWorkflowStatus = workflowFieldValue(controlFieldOverrides, "status", "");
 
   return {
     ...row,
     evidenceStatus: workflowFieldValue(controlFieldOverrides, "status", evidenceStatus),
+    evidenceWorkflowStatus: evidenceStatus,
+    currentWorkflowStatus,
     ownerCollector: workflowFieldValue(fieldOverrides, "ownerCollector", row.ownerCollector),
     dateCollected: workflowFieldValue(fieldOverrides, "dateCollected", row.dateCollected),
     sourceSystemTool: workflowFieldValue(fieldOverrides, "sourceSystemTool", row.sourceSystemTool),
