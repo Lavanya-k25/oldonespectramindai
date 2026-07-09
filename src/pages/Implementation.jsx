@@ -15,7 +15,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import AppShell from "../components/layout/AppShell";
 import { useFrameworkData } from "../core/adapters/useFrameworkData";
 import { useRelationshipGraph, getLinkedItemsFromGraph } from "../core/adapters/useRelationshipGraph";
@@ -29,6 +29,7 @@ import {
   isRelevantToQuestionnaire,
   loadQuestionnaireResponses,
 } from "../data/questionnaireEngine";
+import { useFrameworkWorkspace } from "../framework/FrameworkWorkspaceContext";
 
 const implementationTabs = [
   "Risk Scenarios",
@@ -533,6 +534,7 @@ const populationColumns = [
 
 export default function Implementation() {
   const location = useLocation();
+  const frameworkWorkspace = useFrameworkWorkspace();
   const [activeTab, setActiveTab] = useState("Tests");
   const selectedFramework = getSelectedFramework(location);
   const selectedFrameworkId = resolveFrameworkId(selectedFramework?.slug) || DEFAULT_FRAMEWORK_ID;
@@ -544,6 +546,7 @@ export default function Implementation() {
 
   const [questionnaireResponses, setQuestionnaireResponses] = useState(() => loadQuestionnaireResponses(selectedFrameworkId));
   const isCMMC = isCMMCFramework(selectedFramework);
+  const shouldRedirectToCanonicalCMMC = isCMMC || (!selectedFramework && isCMMCFramework(frameworkWorkspace.activeFramework));
   const isISO27001 = selectedFrameworkId === ISO27001_FRAMEWORK_ID;
   const currentTabs = isCMMC ? cmmcImplementationTabs : isISO27001 ? iso27001ImplementationTabs : implementationTabs;
   const defaultActiveTab = isCMMC ? "Overview" : isISO27001 ? "Mandatory Docs" : "Tests";
@@ -664,6 +667,10 @@ export default function Implementation() {
     };
   }, [selectedFrameworkId]);
 
+  if (shouldRedirectToCanonicalCMMC) {
+    return <CanonicalCMMCRedirect frameworkWorkspace={frameworkWorkspace} />;
+  }
+
   if (!selectedFramework) {
     return <SelectFrameworkScreen />;
   }
@@ -736,6 +743,8 @@ export default function Implementation() {
 }
 
 function SelectFrameworkScreen() {
+  const { selectFramework } = useFrameworkWorkspace();
+
   return (
     <AppShell>
       <div className="space-y-7">
@@ -754,12 +763,14 @@ function SelectFrameworkScreen() {
         <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {frameworks.map((framework) => {
             const slug = framework.slug || slugifyFramework(framework.name);
+            const isCMMCCard = isCMMCFramework(framework);
 
             return (
               <Link
                 key={framework.id}
-                to={`/implementation?framework=${slug}`}
-                state={{ framework }}
+                to={isCMMCCard ? "/cmmc" : `/implementation?framework=${slug}`}
+                state={isCMMCCard ? undefined : { framework }}
+                onClick={isCMMCCard ? () => selectFramework("cmmc") : undefined}
                 className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
               >
                 <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
@@ -780,6 +791,31 @@ function SelectFrameworkScreen() {
       </div>
     </AppShell>
   );
+}
+
+function CanonicalCMMCRedirect({ frameworkWorkspace }) {
+  const {
+    activeFramework,
+    isFrameworkSelected,
+    selectFramework,
+    setActiveFramework,
+  } = frameworkWorkspace;
+
+  useEffect(() => {
+    if (activeFramework?.slug === "cmmc") return;
+    if (isFrameworkSelected("cmmc")) {
+      setActiveFramework("cmmc");
+      return;
+    }
+
+    selectFramework("cmmc");
+  }, [activeFramework?.slug, isFrameworkSelected, selectFramework, setActiveFramework]);
+
+  if (activeFramework?.slug !== "cmmc") {
+    return null;
+  }
+
+  return <Navigate to="/cmmc" replace />;
 }
 
 function OverviewRings({ data, workspaceData, selectedFramework }) {
