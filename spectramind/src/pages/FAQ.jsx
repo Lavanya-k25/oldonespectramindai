@@ -13,7 +13,7 @@ const faqs = [
   ],
   [
     "Which frameworks can teams manage?",
-    "The public pages currently highlight SOC 2, ISO 27001, and HIPAA workflows.",
+    "The public pages currently highlight SOC 2, ISO 27001, and CMMC workflows.",
   ],
   [
     "Where does AI fit in?",

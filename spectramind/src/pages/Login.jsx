@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useUser } from "../auth/UserContext";
+import { APP_NAME } from "../core/adapters/useOrganizationBranding";
+import { isApiEnabled } from "../api/client";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -19,25 +22,27 @@ const highlights = [
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login, loginWithPassword } = useUser();
   const googleButtonRef = useRef(null);
   const [googleStatus, setGoogleStatus] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handleGoogleCredential = useCallback(
     (response) => {
       const profile = decodeJwt(response.credential);
-
-      localStorage.setItem(
-        "spectramind_google_user",
-        JSON.stringify({
-          email: profile.email,
-          name: profile.name,
-          picture: profile.picture,
-        })
-      );
+      login({
+        id: profile.sub,
+        email: profile.email,
+        name: profile.name,
+        picture: profile.picture,
+      });
 
       navigate("/dashboard");
     },
-    [navigate]
+    [login, navigate]
   );
 
   useEffect(() => {
@@ -87,9 +92,18 @@ export default function Login() {
     document.head.appendChild(script);
   }, [handleGoogleCredential]);
 
-  const handleEmailSignIn = (event) => {
+  const handleEmailSignIn = async (event) => {
     event.preventDefault();
-    navigate("/dashboard");
+    setSubmitting(true);
+    setLoginError("");
+    try {
+      await loginWithPassword(email, password, { remember: true });
+      navigate("/dashboard");
+    } catch (error) {
+      setLoginError(error.message || "Sign in failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleGoogleFallback = () => {
@@ -102,51 +116,51 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen text-slate-900">
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative hidden overflow-hidden border-r border-white/10 bg-slate-950 px-12 py-8 lg:flex lg:flex-col">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(37,99,235,.35),transparent_30%),radial-gradient(circle_at_85%_30%,rgba(16,185,129,.22),transparent_28%)]" />
+        <section className="relative hidden overflow-hidden border-r border-white/70 bg-[#fffdf8]/68 px-12 py-8 shadow-2xl shadow-slate-900/5 backdrop-blur lg:flex lg:flex-col">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(216,180,109,.34),transparent_30%),radial-gradient(circle_at_85%_30%,rgba(255,255,255,.76),transparent_28%),linear-gradient(135deg,rgba(255,255,255,.46),rgba(236,231,220,.48))]" />
 
           <Link to="/" className="relative flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-xl font-bold">
+            <span className="flex h-11 w-11 items-center justify-center rounded-lg border border-blue-600/30 bg-[linear-gradient(135deg,rgba(255,255,255,.95),rgba(216,180,109,.52))] text-xl font-black text-blue-700 shadow-lg shadow-blue-600/20">
               S
             </span>
-            <span className="text-2xl font-bold">SpectraMind</span>
+            <span className="text-2xl font-black">{APP_NAME}</span>
           </Link>
 
-          <div className="relative flex flex-1 flex-col justify-center -translate-y-10 py-8">
+          <div className="relative flex flex-1 flex-col justify-center py-8">
             <div className="max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-blue-100">
-              <Sparkles size={16} />
-              Secure access for compliance teams
-            </div>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-blue-600/20 bg-white/52 px-4 py-2 text-sm font-bold text-blue-700 shadow-lg shadow-blue-600/10 backdrop-blur">
+                <Sparkles size={16} />
+                Secure access for compliance teams
+              </div>
 
-            <h1 className="mt-6 text-5xl font-bold leading-tight">
-              Welcome back to your trust workspace.
-            </h1>
+              <h1 className="mt-6 text-5xl font-black leading-tight">
+                Welcome back to your trust workspace.
+              </h1>
 
-            <p className="mt-5 text-lg leading-8 text-slate-300">
-              Sign in to manage controls, evidence, risks, vendors, and trust
-              reporting from one focused operating system.
-            </p>
+              <p className="mt-5 text-lg leading-8 text-slate-600">
+                Sign in to manage controls, evidence, risks, vendors, and trust
+                reporting from one focused operating system.
+              </p>
 
-            <div className="mt-7 space-y-3">
-              {highlights.map((item) => (
-                <div key={item} className="flex items-center gap-3 text-slate-200">
-                  <CheckCircle2 size={20} className="text-emerald-400" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
+              <div className="mt-7 space-y-3">
+                {highlights.map((item) => (
+                  <div key={item} className="flex items-center gap-3 text-slate-700">
+                    <CheckCircle2 size={20} className="text-emerald-600" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="relative rounded-lg border border-white/10 bg-white/10 p-4 backdrop-blur [@media(max-height:760px)]:hidden">
+          <div className="relative rounded-lg border border-white/75 bg-white/58 p-4 shadow-xl shadow-slate-900/5 backdrop-blur [@media(max-height:760px)]:hidden">
             <div className="flex items-center gap-3">
-              <ShieldCheck className="text-emerald-300" size={24} />
+              <ShieldCheck className="text-blue-700" size={24} />
               <div>
-                <p className="font-bold">Protected product access</p>
-                <p className="mt-1 text-sm leading-6 text-slate-300">
+                <p className="font-black">Protected product access</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
                   Public visitors can view testimonials. Authorized users can enter the dashboard.
                 </p>
               </div>
@@ -154,34 +168,34 @@ export default function Login() {
           </div>
         </section>
 
-        <section className="flex items-center justify-center bg-white px-6 py-10 text-slate-950 dark:bg-slate-950 dark:text-white lg:px-12">
-          <div className="w-full max-w-md">
+        <section className="flex items-center justify-center px-6 py-10 lg:px-12">
+          <div className="w-full max-w-md rounded-lg border border-white/75 bg-white/68 p-6 shadow-2xl shadow-slate-900/10 backdrop-blur">
             <Link
               to="/"
-              className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-primary dark:text-slate-300"
+              className="mb-10 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-blue-700"
             >
               <ArrowLeft size={17} />
               Back to homepage
             </Link>
 
             <div className="mb-8">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-blue-600/20 bg-blue-50 text-blue-700">
                 <LockKeyhole size={24} />
               </div>
-              <h2 className="text-4xl font-bold">Sign in</h2>
-              <p className="mt-3 leading-7 text-slate-600 dark:text-slate-300">
-                Use your work email or continue with Google to access SpectraMind.
+              <h2 className="text-4xl font-black">Sign in</h2>
+              <p className="mt-3 leading-7 text-slate-600">
+                Use your work email or continue with Google to access {APP_NAME}.
               </p>
             </div>
 
             <div className="mb-5">
-              {googleClientId ? (
+              {googleClientId && !isApiEnabled ? (
                 <div ref={googleButtonRef} className="min-h-11" />
               ) : (
                 <button
                   type="button"
                   onClick={handleGoogleFallback}
-                  className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+                  className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white/72 px-4 py-3 font-semibold text-slate-800 transition hover:bg-white hover:text-blue-700"
                 >
                   <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 text-sm font-bold">
                     G
@@ -191,64 +205,75 @@ export default function Login() {
               )}
 
               {googleStatus && (
-                <p className="mt-3 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                <p className="mt-3 rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
                   {googleStatus}
                 </p>
               )}
             </div>
 
             <div className="my-6 flex items-center gap-3">
-              <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+              <div className="h-px flex-1 bg-slate-200" />
               <span className="text-sm font-semibold text-slate-400">or</span>
-              <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+              <div className="h-px flex-1 bg-slate-200" />
             </div>
 
             <form onSubmit={handleEmailSignIn} className="space-y-4">
               <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                <span className="mb-2 block text-sm font-semibold text-slate-700">
                   Work email
                 </span>
                 <input
                   type="email"
                   placeholder="you@company.com"
                   required
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:ring-blue-950"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white/78 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                 />
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                <span className="mb-2 block text-sm font-semibold text-slate-700">
                   Password
                 </span>
                 <input
                   type="password"
                   placeholder="Enter your password"
                   required
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:ring-blue-950"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white/78 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                 />
               </label>
 
+              {loginError && (
+                <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {loginError}
+                </p>
+              )}
+
               <div className="flex items-center justify-between gap-4 text-sm">
-                <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                <label className="flex items-center gap-2 text-slate-600">
                   <input type="checkbox" className="h-4 w-4 rounded border-slate-300" />
                   Remember me
                 </label>
-                <button type="button" className="font-semibold text-primary hover:text-blue-700">
+                <button type="button" className="font-semibold text-blue-700 hover:text-blue-800">
                   Forgot password?
                 </button>
               </div>
 
               <button
                 type="submit"
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
+                disabled={submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-600/35 bg-[linear-gradient(135deg,rgba(255,246,216,.96),rgba(216,180,109,.74)_48%,rgba(168,117,52,.86))] px-4 py-3 font-bold text-slate-900 shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5"
               >
-                Sign In
+                {submitting ? "Signing in..." : "Sign In"}
                 <ArrowRight size={18} />
               </button>
             </form>
 
-            <p className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
-              Need access? Contact your SpectraMind administrator.
+            <p className="mt-8 text-center text-sm text-slate-500">
+              Need access? Contact your {APP_NAME} administrator.
             </p>
           </div>
         </section>

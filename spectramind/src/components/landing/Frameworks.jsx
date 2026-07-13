@@ -8,8 +8,8 @@ const frameworks = [
     description: "Information security management."
   },
   {
-    name: "HIPAA",
-    description: "Healthcare data protection."
+    name: "CMMC",
+    description: "Defense cybersecurity readiness."
   },
   {
     name: "GDPR",

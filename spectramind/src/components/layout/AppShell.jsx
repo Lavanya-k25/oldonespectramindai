@@ -3,7 +3,7 @@ import Topbar from "./Topbar";
 
 export default function AppShell({ children }) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white lg:flex">
+    <div className="min-h-screen bg-transparent text-slate-900 lg:flex">
       <Sidebar />
 
       <div className="min-w-0 flex-1">

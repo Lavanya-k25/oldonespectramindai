@@ -1,14 +1,20 @@
 import { UserCircle } from "lucide-react";
+import { useMemo } from "react";
+import { useUser } from "../auth/UserContext";
 import AppShell from "../components/layout/AppShell";
 
-const details = [
-  ["Full Name", "Admin User"],
-  ["Email", "admin@spectramind.ai"],
-  ["Role", "Compliance Administrator"],
-  ["Department", "Security & Compliance"],
-];
-
 export default function Profile() {
+  const { user } = useUser();
+  const details = useMemo(
+    () => [
+      ["Full Name", user?.name || "User"],
+      ["Email", user?.email || ""],
+      ["Role", user?.role || "User"],
+      ["Organization", user?.organizationName || ""],
+    ],
+    [user]
+  );
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -27,10 +33,10 @@ export default function Profile() {
               <UserCircle size={58} />
             </div>
             <h2 className="mt-4 text-xl font-bold text-slate-950 dark:text-white">
-              Admin User
+              {user?.name || "User"}
             </h2>
             <p className="mt-1 text-slate-500 dark:text-slate-400">
-              Compliance Administrator
+              {user?.role || "User"}
             </p>
           </section>
 

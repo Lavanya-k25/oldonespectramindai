@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
+import { UserProvider } from "./auth/UserContext";
+import { ComplianceStateProvider } from "./compliance/ComplianceStateContext";
+import { FrameworkWorkspaceProvider } from "./framework/FrameworkWorkspaceContext";
 import "./index.css";
 
 ReactDOM.createRoot(
@@ -10,7 +13,13 @@ ReactDOM.createRoot(
 ).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <UserProvider>
+        <FrameworkWorkspaceProvider>
+          <ComplianceStateProvider>
+            <App />
+          </ComplianceStateProvider>
+        </FrameworkWorkspaceProvider>
+      </UserProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
